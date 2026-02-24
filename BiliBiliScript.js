@@ -755,7 +755,7 @@ function getChannel(url) {
         return new PlatformChannel({
             id: new PlatformID(PLATFORM, "dynamic_feed", plugin.config.id),
             name: "B站动态订阅",
-            thumbnail: "",
+            thumbnail: "https://raw.githubusercontent.com/dsdwsd/grayjay-bilibili-author-recommend/master/BiliBiliIcon.png",
             url: DYNAMIC_FEED_URL,
             description: "通过B站动态Feed获取全部订阅更新",
             links: { 'BiliBili': DYNAMIC_FEED_URL }
@@ -894,82 +894,101 @@ function getChannelContents(url, type, order, filters) {
  * 对应 https://t.bilibili.com/ 页面
  */
 function _getDynamicFeedContents() {
-    // feed/all API 与 feed/space 同系列，需要 WBI 签名
-    // 不支持 page/page_size 参数，每页固定返回约12条动态
-    // 分页通过 offset 实现，这里只获取第一页
-    const url = create_signed_url(DYNAMIC_FEED_API, {
-        type: "video"
-    }).toString();
-    log("BiliBili log: dynamic feed request url: " + url);
-    const now = Date.now();
-    const raw_response = local_http.GET(url, {
-        Host: "api.bilibili.com",
-        Cookie: `buvid3=${local_state.buvid3}; buvid4=${local_state.buvid4}; b_nut=${local_state.b_nut}`,
-        Referer: "https://t.bilibili.com/",
-        "User-Agent": USER_AGENT
-    }, true);
-    log_network_call(now);
-    log("BiliBili log: dynamic feed response status: " + raw_response.code);
-    const json = raw_response.body;
-    log("BiliBili log: dynamic feed response body (first 500): " + json.substring(0, 500));
-    const response = JSON.parse(json);
-    if (response.code !== 0) {
-        log("BiliBili log: dynamic feed API error, code: " + response.code + ", message: " + response.message);
+    try {
+        // 先尝试不带WBI签名（feed/all可能不需要签名）
+        const url = create_url(DYNAMIC_FEED_API, {
+            type: "video"
+        }).toString();
+        log("BiliBili log: dynamic feed request url: " + url);
+        const now = Date.now();
+        const raw_response = local_http.GET(url, {
+            Host: "api.bilibili.com",
+            Cookie: `buvid3=${local_state.buvid3}; buvid4=${local_state.buvid4}; b_nut=${local_state.b_nut}`,
+            Referer: "https://t.bilibili.com/",
+            "User-Agent": USER_AGENT
+        }, true);
+        log_network_call(now);
+        log("BiliBili log: dynamic feed response code: " + raw_response.code);
+        const json = raw_response.body;
+        if (!json || json.length === 0) {
+            log("BiliBili log: dynamic feed response body is empty");
+            return new VideoPager([], false);
+        }
+        log("BiliBili log: dynamic feed body (first 300): " + json.substring(0, 300));
+        const response = JSON.parse(json);
+        if (response.code !== 0) {
+            log("BiliBili log: dynamic feed API error, code: " + response.code + ", message: " + (response.message || ""));
+            return new VideoPager([], false);
+        }
+        if (!response.data || !response.data.items) {
+            log("BiliBili log: dynamic feed response has no data.items");
+            return new VideoPager([], false);
+        }
+        const items = response.data.items;
+        log("BiliBili log: dynamic feed items count: " + items.length);
+        const videos = [];
+        for (const item of items) {
+            try {
+                if (item.type !== "DYNAMIC_TYPE_AV") continue;
+                const module_author = item.modules.module_author;
+                const module_dynamic = item.modules.module_dynamic;
+                if (!module_dynamic || !module_dynamic.major) continue;
+                const archive = module_dynamic.major.archive;
+                if (!archive) continue;
+                const author_id = new PlatformID(PLATFORM, module_author.mid.toString(), plugin.config.id);
+                const video_id = new PlatformID(PLATFORM, archive.bvid, plugin.config.id);
+                const duration_str = archive.duration_text;
+                let duration = 0;
+                if (duration_str) {
+                    const parts = duration_str.split(":");
+                    if (parts.length === 2) {
+                        duration = parseInt(parts[0]) * 60 + parseInt(parts[1]);
+                    } else if (parts.length === 3) {
+                        duration = parseInt(parts[0]) * 3600 + parseInt(parts[1]) * 60 + parseInt(parts[2]);
+                    }
+                }
+                let view_count = 0;
+                const play_count_str = archive.stat?.play;
+                if (play_count_str) {
+                    if (typeof play_count_str === "number") {
+                        view_count = play_count_str;
+                    } else if (typeof play_count_str === "string") {
+                        if (play_count_str.includes("万")) {
+                            view_count = parseFloat(play_count_str) * 10000;
+                        } else {
+                            view_count = parseInt(play_count_str) || 0;
+                        }
+                    }
+                }
+                videos.push(new PlatformVideo({
+                    id: video_id,
+                    name: archive.title,
+                    url: `${VIDEO_URL_PREFIX}${archive.bvid}`,
+                    thumbnails: new Thumbnails([new Thumbnail(archive.cover, HARDCODED_THUMBNAIL_QUALITY)]),
+                    author: new PlatformAuthorLink(
+                        author_id,
+                        module_author.name,
+                        `${SPACE_URL_PREFIX}${module_author.mid}`,
+                        module_author.face,
+                        undefined
+                    ),
+                    duration,
+                    viewCount: view_count,
+                    isLive: false,
+                    shareUrl: `${VIDEO_URL_PREFIX}${archive.bvid}`,
+                    datetime: Number(module_author.pub_ts)
+                }));
+            } catch (itemError) {
+                log("BiliBili log: failed to parse dynamic feed item: " + (itemError?.message || String(itemError)));
+                continue;
+            }
+        }
+        log(`BiliBili log: dynamic feed returned ${videos.length} videos`);
+        return new VideoPager(videos, false);
+    } catch (e) {
+        log("BiliBili log: _getDynamicFeedContents error: " + (e?.message || String(e)));
         return new VideoPager([], false);
     }
-    const items = response.data.items || [];
-    // 获取本页全部视频动态（API默认每页约12条）
-    const videos = [];
-    for (const item of items) {
-        if (item.type !== "DYNAMIC_TYPE_AV") continue;
-        const module_author = item.modules.module_author;
-        const module_dynamic = item.modules.module_dynamic;
-        const archive = module_dynamic.major.archive;
-        if (!archive) continue;
-        const author_id = new PlatformID(PLATFORM, module_author.mid.toString(), plugin.config.id);
-        const video_id = new PlatformID(PLATFORM, archive.bvid, plugin.config.id);
-        const duration_str = archive.duration_text;
-        let duration = 0;
-        if (duration_str) {
-            const parts = duration_str.split(":");
-            if (parts.length === 2) {
-                duration = parseInt(parts[0]) * 60 + parseInt(parts[1]);
-            } else if (parts.length === 3) {
-                duration = parseInt(parts[0]) * 3600 + parseInt(parts[1]) * 60 + parseInt(parts[2]);
-            }
-        }
-        const play_count_str = archive.stat?.play;
-        let view_count = 0;
-        if (play_count_str) {
-            if (typeof play_count_str === "number") {
-                view_count = play_count_str;
-            } else if (play_count_str.includes("万")) {
-                view_count = parseFloat(play_count_str) * 10000;
-            } else {
-                view_count = parseInt(play_count_str) || 0;
-            }
-        }
-        videos.push(new PlatformVideo({
-            id: video_id,
-            name: archive.title,
-            url: `${VIDEO_URL_PREFIX}${archive.bvid}`,
-            thumbnails: new Thumbnails([new Thumbnail(archive.cover, HARDCODED_THUMBNAIL_QUALITY)]),
-            author: new PlatformAuthorLink(
-                author_id,
-                module_author.name,
-                `${SPACE_URL_PREFIX}${module_author.mid}`,
-                module_author.face,
-                undefined
-            ),
-            duration,
-            viewCount: view_count,
-            isLive: false,
-            shareUrl: `${VIDEO_URL_PREFIX}${archive.bvid}`,
-            datetime: Number(module_author.pub_ts)
-        }));
-    }
-    log(`BiliBili log: dynamic feed returned ${videos.length} videos`);
-    return new VideoPager(videos, false);
 }
 function _getChannelContentsInner(url, type, order, filters) {
     if (type === null) {
