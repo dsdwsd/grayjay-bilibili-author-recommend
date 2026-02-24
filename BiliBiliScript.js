@@ -1,7 +1,7 @@
 const PLATFORM = "BiliBili";
-const CONTENT_DETAIL_URL_REGEX = /^https:\/\/(www\.|live\.|t\.|m\.|)(bilibili\.com|b23\.tv)\/(bangumi\/play\/ep|video\/|opus\/|cheese\/play\/ep|)(\d+|[0-9a-zA-Z]{12}|av[0-9]{15})(\/|\?|$)/;
+const CONTENT_DETAIL_URL_REGEX = /^https:\/\/(www\.|live\.|t\.|m\.|)(bilibili\.com|b23\.tv)\/(bangumi\/play\/ep|video\/|opus\/|cheese\/play\/ep|)(\d+|[0-9a-zA-Z]{7,12}|av[0-9]{15})(\/|\?|$)|^https:\/\/www\.bilibili\.tv\/[a-z]{2}\/video\/(\d+)(\/|\?|$)/;
 const PLAYLIST_URL_REGEX = /^https:\/\/(www|space)\.bilibili.com\/(\d+|)(bangumi\/play\/ss|cheese\/play\/ss|medialist\/detail\/ml|festival\/|\/channel\/collectiondetail\?sid=|\/channel\/seriesdetail\?sid=|\/favlist\?fid=|watchlater\/)(\d+|[0-9a-zA-Z]+|.*#\/list)(\/|\?|$)/;
-const SPACE_URL_REGEX = /^https:\/\/space\.bilibili\.com\/(\d+)(\/|\?|$)/;
+const SPACE_URL_REGEX = /^https:\/\/space\.bilibili\.com\/(\d+)(\/|\?|$)|^https:\/\/www\.bilibili\.com\/space\/(\d+)(\/|\?|$)|^https:\/\/m\.bilibili\.com\/space\/(\d+)(\/|\?|$)|^https:\/\/www\.bilibili\.tv\/[a-z]{2}\/space\/(\d+)(\/|\?|$)/;
 const VIDEO_URL_PREFIX = "https://www.bilibili.com/video/";
 const LIVE_ROOM_URL_PREFIX = "https://live.bilibili.com/";
 const SPACE_URL_PREFIX = "https://space.bilibili.com/";
@@ -139,16 +139,16 @@ function init_session_info() {
     const dm_img_inter = `{"ds":[],"wh":[${wh[0]},${wh[1]},${wh[2]}],"of":[${value_one},${value_one * 2},${value_one}]}`;
     const b_nut = create_b_nut();
     const requests = [{
-        request: mixin_constant_request,
-        process: process_mixin_constant
-    }, {
         request(builder) { return nav_request(false, builder); },
         process: process_wbi_keys
     }, {
         request: cookie_request,
         process(response) { return JSON.parse(response.body); }
+    }, {
+        request: mixin_constant_request,
+        process: process_mixin_constant
     }];
-    const [mixin_constant, { wbi_img_key, wbi_sub_key }, finger_spi_response] = execute_requests(requests);
+    const [{ wbi_img_key, wbi_sub_key }, finger_spi_response, mixin_constant] = execute_requests(requests);
     const buvid3 = finger_spi_response.data.b_3;
     const buvid4 = finger_spi_response.data.b_4;
     // required to access space posts
@@ -193,8 +193,16 @@ function mixin_constant_request(builder) {
     return result;
 }
 function process_mixin_constant(html) {
-    // Bilibili removed getPictureHashKey from bili-header.umd.js, so we hardcode the mixin constant
-    const mixin_constant = [46, 47, 18, 2, 53, 8, 23, 32, 15, 50, 10, 31, 58, 3, 45, 35, 27, 43, 5, 49, 33, 9, 42, 19, 29, 28, 14, 39, 12, 38, 41, 13, 37, 48, 7, 16, 24, 55, 40, 61, 26, 17, 0, 1, 60, 51, 30, 4, 22, 25, 54, 21, 56, 59, 6, 63, 57, 62, 11, 36, 20, 34, 44, 52];
+    // Match pattern: array of numbers followed by forEach with charAt pattern
+    // Pattern 1 (old): variable=[],[numbers].forEach((function(e){...charAt(e)...}))
+    // Pattern 2 (new): var t=[numbers],r=[];return t.forEach(function(n){e.charAt(n)
+    // This is resilient to variable name changes and extracts just the number array
+    const mixin_constant_regex = /\w+=(\[\d+(?:,\d+){60,}\]),\w+=\[\];(?:return )?\w+\.forEach\((?:\()?function\(\w+\)\{\w+\.charAt\(\w+\)/;
+    const mixin_constant_json = html.body.match(mixin_constant_regex)?.[1];
+    if (mixin_constant_json === undefined) {
+        throw new ScriptException("failed to acquire mixin_constant");
+    }
+    const mixin_constant = JSON.parse(mixin_constant_json);
     return mixin_constant;
 }
 function process_wbi_keys(raw_response) {
@@ -330,7 +338,7 @@ function format_home(home) {
                     viewCount: item.stat.view,
                     isLive: false,
                     shareUrl: item.uri,
-                    datetime: item.pubdate
+                    datetime: Number(item.pubdate)
                 })];
             }
             case "live": {
@@ -565,7 +573,7 @@ function format_search_results(results) {
                     viewCount: item.play,
                     isLive: false,
                     shareUrl: url,
-                    datetime: item.pubdate
+                    datetime: Number(item.pubdate)
                 });
             }
             case "live_room": {
@@ -582,7 +590,10 @@ function format_search_results(results) {
                     isLive: true,
                     shareUrl: url,
                     // TODO assumes China timezone
-                    datetime: (new Date(`${item.live_time} UTC+8`)).getTime() / 1000
+                    datetime: (() => {
+                        const liveTime = new Date(`${item.live_time} UTC+8`).getTime();
+                        return isNaN(liveTime) ? HARDCODED_ZERO : Math.floor(liveTime / 1000);
+                    })()
                 });
             }
             // TODO once the main search results support playlists courses and shows should return playlists
@@ -617,7 +628,7 @@ function format_search_results(results) {
                     isLive: false,
                     shareUrl: url,
                     // TODO assumes China timezone
-                    datetime: item.pubtime
+                    datetime: Number(item.pubtime)
                 });
             }
             case "media_ft": {
@@ -656,7 +667,7 @@ function format_search_results(results) {
                     isLive: false,
                     shareUrl: url,
                     // TODO assumes China timezone
-                    datetime: item.pubtime
+                    datetime: Number(item.pubtime)
                 });
             }
             case "bili_user":
@@ -714,7 +725,10 @@ function format_space_results(space_search_results) {
             thumbnail: `https:${result.upic}`,
             subscribers: result.fans,
             description: result.usign,
-            url: `${SPACE_URL_PREFIX}${result.mid}`
+            url: `${SPACE_URL_PREFIX}${result.mid}`,
+            links: {
+                'BiliBili': `${SPACE_URL_PREFIX}${result.mid}`
+            }
         });
     });
 }
@@ -746,6 +760,9 @@ function getChannel(url) {
             name: NAME_LOAD_FAILED,
             thumbnail: "",
             url: `${SPACE_URL_PREFIX}${space_id}`,
+            links: {
+                'BiliBili': `${SPACE_URL_PREFIX}${space_id}`
+            }
         });
     }
     // cache results
@@ -770,6 +787,9 @@ function getChannel(url) {
         subscribers: fan_count_response.data.follower,
         description: space.data.sign,
         url: `${SPACE_URL_PREFIX}${space_id}`,
+        links: {
+            'BiliBili': `${SPACE_URL_PREFIX}${space_id}`
+        }
     });
     return is_default_banner ? channel : {
         ...channel, banner: space.data.top_photo
@@ -780,7 +800,8 @@ function parse_space_url(url) {
     if (match_results === null) {
         throw new ScriptException(`malformed space url: ${url}`);
     }
-    const maybe_space_id = match_results[1];
+    // Group 1: space.bilibili.com/ID, Group 3: www.bilibili.com/space/ID, Group 5: m.bilibili.com/space/ID, Group 7: bilibili.tv/lang/space/ID
+    const maybe_space_id = match_results[1] !== undefined ? match_results[1] : (match_results[3] !== undefined ? match_results[3] : (match_results[5] !== undefined ? match_results[5] : match_results[7]));
     if (maybe_space_id === undefined) {
         throw new ScriptException("unreachable regex error");
     }
@@ -1110,6 +1131,7 @@ function format_space_bangumi(space_courses_response, space_id, space_info) {
     const author_id = new PlatformID(PLATFORM, space_id.toString(), plugin.config.id);
     const author = new PlatformAuthorLink(author_id, space_info.name, `${SPACE_URL_PREFIX}${space_id}`, space_info.face, space_info.num_fans);
     return space_courses_response.data.list.map(function (season) {
+        const releaseTime = new Date(season.publish.release_date).getTime();
         return new PlatformPlaylist({
             id: new PlatformID(PLATFORM, season.season_id.toString(), plugin.config.id),
             name: season.title,
@@ -1118,7 +1140,7 @@ function format_space_bangumi(space_courses_response, space_id, space_info) {
             videoCount: season.formal_ep_count,
             thumbnail: season.cover,
             thumbnails: new Thumbnails([new Thumbnail(season.cover, HARDCODED_THUMBNAIL_QUALITY)]),
-            datetime: new Date(season.publish.release_date).getTime() / 1000
+            datetime: isNaN(releaseTime) ? HARDCODED_ZERO : Math.floor(releaseTime / 1000)
         });
     });
 }
@@ -1353,7 +1375,7 @@ function format_space_videos(space_videos_response, space_id, space_info) {
             viewCount: space_video.play === "--" ? 0 : space_video.play,
             isLive: false,
             shareUrl: url,
-            datetime: space_video.created
+            datetime: Number(space_video.created)
         });
     });
 }
@@ -1481,7 +1503,7 @@ function format_space_posts(space_posts_response, space_id, space_info) {
             textType: Type.Text.HTML,
             author,
             content,
-            datetime: space_post.modules.module_author.pub_ts
+            datetime: Number(space_post.modules.module_author.pub_ts)
         })];
     });
 }
@@ -1606,7 +1628,7 @@ function format_post_search_result(response) {
             url: `${POST_URL_PREFIX}${card.desc.dynamic_id_str}`,
             id: new PlatformID(PLATFORM, card.desc.dynamic_id_str, plugin.config.id),
             author,
-            datetime: card.desc.timestamp
+            datetime: Number(card.desc.timestamp)
         });
     });
 }
@@ -1756,6 +1778,14 @@ function parse_content_details_url(url) {
     if (regex_match_result === null) {
         throw new ScriptException(`malformed content url: ${url}`);
     }
+    // Check if this is a bilibili.tv URL (group 6 will be populated)
+    if (regex_match_result[6] !== undefined) {
+        return {
+            subdomain: "bilibili.tv",
+            content_type: "video/",
+            content_id: regex_match_result[6]
+        };
+    }
     const maybe_subdomain = regex_match_result[1];
     if (maybe_subdomain === undefined) {
         throw new ScriptException("unreachable regex error");
@@ -1776,7 +1806,18 @@ function parse_content_details_url(url) {
         throw new ScriptException("unreachable regex error");
     }
     const content_id = maybe_content_id;
+    // handle b23.tv short URLs by following the redirect
     if (domain === "b23.tv") {
+        const response = local_http.GET(url, {}, false);
+        const new_url = response.body.match(/<meta data-vue-meta="true" itemprop="url" content="(.*?)">/)?.[1];
+        if (new_url !== undefined) {
+            return parse_content_details_url(new_url);
+        }
+        // fallback: try to extract from Location header or other meta tags
+        const redirect_url = response.body.match(/<a href="(https:\/\/www\.bilibili\.com\/video\/[^"]+)">/)?.[1];
+        if (redirect_url !== undefined) {
+            return parse_content_details_url(redirect_url);
+        }
         content_type = "video/";
     }
     // handle weird url format
@@ -1793,12 +1834,11 @@ function getContentDetails(url) {
     const { subdomain, content_type, content_id } = parse_content_details_url(url);
     switch (subdomain) {
         case "live.": {
-            // TODO this currently parses the html
-            // there are however some json apis that could potentially be used instead
+            // Uses the Bilibili Live API endpoints directly
             // https://api.live.bilibili.com/xlive/web-room/v2/index/getRoomPlayInfo
             // https://api.live.bilibili.com/room/v1/Room/get_info
             const room_id = parseInt(content_id);
-            const response = livestream_process((livestream_request(room_id)));
+            const response = livestream_request(room_id);
             const space_id = response.roomInitRes.data.uid;
             let source;
             // Note: while the there is always the http_hls ts option this is currently not usable and 404s
@@ -1868,7 +1908,7 @@ function getContentDetails(url) {
             return new PlatformVideoDetails({
                 description: response.roomInfoRes.data.news_info.content,
                 video: new VideoSourceDescriptor([]),
-                rating: new RatingLikes(response.roomInfoRes.data.like_info_v3.total_likes),
+                rating: new RatingLikes(response.roomInfoRes.data.like_info_v3?.total_likes ?? 0),
                 thumbnails: new Thumbnails([
                     new Thumbnail(response.roomInfoRes.data.room_info.cover, HARDCODED_THUMBNAIL_QUALITY)
                 ]),
@@ -1876,7 +1916,7 @@ function getContentDetails(url) {
                 viewCount: response.roomInfoRes.data.watched_show.num,
                 isLive: true,
                 shareUrl: `${LIVE_ROOM_URL_PREFIX}${room_id}`,
-                datetime: response.roomInfoRes.data.room_info.live_start_time,
+                datetime: Number(response.roomInfoRes.data.room_info.live_start_time),
                 name: response.roomInfoRes.data.room_info.title,
                 url: `${LIVE_ROOM_URL_PREFIX}${room_id}`,
                 id: new PlatformID(PLATFORM, room_id.toString(), plugin.config.id),
@@ -1890,6 +1930,7 @@ function getContentDetails(url) {
         case "www.": return get_video_details(content_type, content_id);
         case "m.": return get_video_details(content_type, content_id);
         case "": return get_video_details(content_type, content_id);
+        case "bilibili.tv": return get_video_details(content_type, content_id);
         default:
             throw assert_exhaustive(subdomain, "unreachable");
     }
@@ -1946,7 +1987,7 @@ function get_video_details(content_type, content_id) {
                 video: new UnMuxVideoSourceDescriptor(video_sources, audio_sources),
                 rating: new RatingLikes(episode_info_response.data.stat.like),
                 shareUrl: `${EPISODE_URL_PREFIX}${episode_id}`,
-                datetime: episode_season_meta.pub_time
+                datetime: Number(episode_season_meta.pub_time)
                 // the recommendations are other series which in Grayjay are playlists
                 // the recommendations section doesn't currently support playlists
                 // the implementation would be similar to courses for the playlists 
@@ -2015,7 +2056,7 @@ function get_video_details(content_type, content_id) {
                 // TODO figure out a rating to use. courses/course episodes don't have likes
                 rating: new RatingLikes(MISSING_RATING),
                 shareUrl: `${COURSE_EPISODE_URL_PREFIX}${episode_id}`,
-                datetime: episode_season_metadata.release_date,
+                datetime: Number(episode_season_metadata.release_date),
                 // Note Grayjay doesn't support playlists as content recommendations so this does currently do anything
                 getContentRecommendations: function () {
                     return new PlaylistPager(season_response.data.recommend_seasons.map((season) => {
@@ -2091,7 +2132,7 @@ function get_video_details(content_type, content_id) {
                 video: new UnMuxVideoSourceDescriptor(video_sources, audio_sources),
                 rating: new RatingLikes(video_info.data.View.stat.like),
                 shareUrl: `${VIDEO_URL_PREFIX}${video_id}`,
-                datetime: video_info.data.View.pubdate,
+                datetime: Number(video_info.data.View.pubdate),
                 getContentRecommendations: function () {
                     const owner_mid = video_info.data.View.owner.mid;
                     return new VideoPager(video_info.data.Related.filter((video) => {
@@ -2102,7 +2143,7 @@ function get_video_details(content_type, content_id) {
                             name: video.title,
                             thumbnails: new Thumbnails([new Thumbnail(video.pic, HARDCODED_THUMBNAIL_QUALITY)]),
                             author: new PlatformAuthorLink(new PlatformID(PLATFORM, video.owner.mid.toString(), plugin.config.id), video.owner.name, `${SPACE_URL_PREFIX}${video_info.data.View.owner.mid}`, video.owner.face),
-                            datetime: video.pubdate,
+                            datetime: Number(video.pubdate),
                             url: `${VIDEO_URL_PREFIX}${video.bvid}`,
                             duration: video.duration,
                             viewCount: video.stat.view,
@@ -2124,25 +2165,69 @@ function get_video_details(content_type, content_id) {
     }
 }
 function livestream_request(room_id, builder) {
-    const runner = builder === undefined ? local_http : builder;
+    // Use the API endpoints directly instead of parsing HTML
+    // https://api.live.bilibili.com/xlive/web-room/v2/index/getRoomPlayInfo
+    // https://api.live.bilibili.com/room/v1/Room/get_info
+    const room_play_info_url = `https://api.live.bilibili.com/xlive/web-room/v2/index/getRoomPlayInfo?room_id=${room_id}&protocol=0,1&format=0,1,2&codec=0,1&qn=10000&platform=web&ptype=8`;
+    const room_info_url = `https://api.live.bilibili.com/room/v1/Room/get_info?room_id=${room_id}`;
+    if (builder !== undefined) {
+        // For batch mode, we still need to implement batch support
+        // For now, return the builder as-is (this path might need future enhancement)
+        return builder;
+    }
     const now = Date.now();
-    const result = runner.GET(`${LIVE_ROOM_URL_PREFIX}${room_id}`, {}, false);
-    if (builder === undefined) {
-        log_network_call(now);
-    }
-    return result;
+    const play_info_response = local_http.GET(room_play_info_url, {}, false);
+    const room_info_response = local_http.GET(room_info_url, {}, false);
+    log_network_call(now);
+    log_network_call(now);
+    return livestream_process(play_info_response, room_info_response);
 }
-function livestream_process(raw_live_response) {
-    const live_regex = /<script>window\.__NEPTUNE_IS_MY_WAIFU__=({.*?})<\/script>/;
-    const match_result = raw_live_response.body.match(live_regex);
-    if (match_result === null) {
-        throw new ScriptException("unreachable");
+function livestream_process(play_info_response, room_info_response) {
+    const play_info = JSON.parse(play_info_response.body);
+    const room_info = JSON.parse(room_info_response.body);
+    if (play_info.code !== 0 || room_info.code !== 0) {
+        throw new ScriptException("Failed to fetch live stream info");
     }
-    const json = match_result[1];
-    if (json === undefined) {
-        throw new ScriptException("unreachable");
+    // Handle offline streams - when the stream is offline, playurl_info is null
+    if (play_info.data.playurl_info === null) {
+        throw new ScriptException("Stream is currently offline");
     }
-    const response = JSON.parse(json);
+    // Construct the LiveResponse format from the API responses
+    const response = {
+        roomInitRes: {
+            data: {
+                playurl_info: play_info.data.playurl_info,
+                uid: play_info.data.uid
+            }
+        },
+        roomInfoRes: {
+            data: {
+                room_info: {
+                    description: room_info.data.description,
+                    live_status: room_info.data.live_status,
+                    title: room_info.data.title,
+                    live_start_time: new Date(room_info.data.live_time).getTime() / 1000,
+                    cover: room_info.data.user_cover
+                },
+                anchor_info: {
+                    base_info: {
+                        uname: "", // Not available in this API response
+                        face: "" // Not available in this API response
+                    },
+                    relation_info: {
+                        attention: room_info.data.attention
+                    }
+                },
+                news_info: {
+                    content: "" // Not available in this API response
+                },
+                watched_show: {
+                    num: room_info.data.online,
+                    text_large: `${room_info.data.online}`
+                }
+            }
+        }
+    };
     return response;
 }
 /**
@@ -2175,7 +2260,7 @@ function get_post(post_id) {
         textType: Type.Text.HTML,
         author: new PlatformAuthorLink(new PlatformID(PLATFORM, space_post.modules.module_author.mid.toString(), plugin.config.id), space_post.modules.module_author.name, `${SPACE_URL_PREFIX}${space_post.modules.module_author.mid}`, space_post.modules.module_author.face, local_storage_cache.space_cache.get(space_post.modules.module_author.mid)?.num_fans),
         content,
-        datetime: space_post.modules.module_author.pub_ts
+        datetime: Number(space_post.modules.module_author.pub_ts)
     });
 }
 function download_post(post_id) {
@@ -2383,6 +2468,9 @@ function load_video_details(video_id, is_logged_in = false) {
     const cid = local_storage_cache.cid_cache.get(video_id);
     if (cid === undefined) {
         const detail_response = JSON.parse(video_detail_request(video_id).body);
+        if (detail_response.code == -404) {
+            throw new UnavailableException("Invalid video URL or the video has been removed");
+        }
         if (is_logged_in) {
             const requests = [
                 {
@@ -2630,7 +2718,7 @@ function format_bangumi_search(shows, movies) {
             url: `${SEASON_URL_PREFIX}${item.season_id}`,
             videoCount: item.ep_size === 0 ? 1 : item.ep_size,
             thumbnail: item.cover,
-            datetime: item.pubtime,
+            datetime: Number(item.pubtime),
         });
     });
 }
@@ -2820,7 +2908,7 @@ function getPlaylist(url) {
                     viewCount: video.stat.view,
                     isLive: false,
                     shareUrl: url,
-                    datetime: video.pubdate
+                    datetime: Number(video.pubdate)
                 });
             });
             const first_video = watch_later_response.data.list[0];
@@ -2882,7 +2970,7 @@ function format_collection(author, collection_response) {
             viewCount: video.stat.view,
             isLive: false,
             shareUrl: url,
-            datetime: video.pubdate
+            datetime: Number(video.pubdate)
         });
     });
     return videos;
@@ -2921,7 +3009,7 @@ function format_season(season_id, season_response) {
             viewCount: season_response.result.stat.views,
             isLive: false,
             shareUrl: url,
-            datetime: episode.pub_time
+            datetime: Number(episode.pub_time)
         });
     });
     return new PlatformPlaylistDetails({
@@ -2974,7 +3062,7 @@ function format_series(author, series_response) {
             viewCount: video.stat.view,
             isLive: false,
             shareUrl: url,
-            datetime: video.pubdate
+            datetime: Number(video.pubdate)
         });
     });
     return videos;
@@ -3013,7 +3101,7 @@ function format_course(season_id, course_response) {
             viewCount: episode.play,
             isLive: false,
             shareUrl: url,
-            datetime: episode.release_date
+            datetime: Number(episode.release_date)
         });
     });
     return new PlatformPlaylistDetails({
@@ -3088,7 +3176,7 @@ function format_favorites_videos(favorites_response) {
             viewCount: video.cnt_info.play,
             isLive: false,
             shareUrl: url,
-            datetime: video.pubtime
+            datetime: Number(video.pubtime)
         });
     });
     return videos;
@@ -3164,7 +3252,7 @@ function watch_later_request(logged_in, builder) {
 // we should cache them so that when getSubComments is called we don't have to make any networks requests
 function getComments(url) {
     const { subdomain, content_type, content_id } = parse_content_details_url(url);
-    const reduced_subdomain = subdomain === "m." || subdomain === "" ? "www." : subdomain;
+    const reduced_subdomain = subdomain === "m." || subdomain === "" || subdomain === "bilibili.tv" ? "www." : subdomain;
     if (reduced_subdomain === "live.") {
         return new CommentPager([], false);
     }
