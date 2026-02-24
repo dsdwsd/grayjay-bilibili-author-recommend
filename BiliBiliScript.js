@@ -894,9 +894,9 @@ function getChannelCapabilities() {
     ], []);
 }
 function getChannelContents(url, type, order, filters) {
-    // 已登录时，优先从动态Feed缓存获取该频道的最新视频
-    // 这样只需1次API调用即可获取所有订阅更新，避免逐个频道调用失败
-    if (bridge.isLoggedIn()) {
+    // 仅在订阅刷新时（type===null）使用动态Feed缓存
+    // 用户浏览作者主页时（type有具体值）走原始API获取完整视频列表
+    if (type === null && bridge.isLoggedIn()) {
         try {
             const space_id = parse_space_url(url);
             const feed_map = _refreshDynamicFeedCache();
@@ -906,8 +906,7 @@ function getChannelContents(url, type, order, filters) {
                     log(`BiliBili log: dynamic feed cache hit for mid ${space_id}, ${cached_videos.length} videos`);
                     return new VideoPager(cached_videos, false);
                 }
-                // 缓存未命中（该作者近期无动态），返回空代表无更新
-                // 不回退到原始 API（避免 rate limit 导致失败）
+                // 缓存未命中 = 该作者近期无视频更新
                 log(`BiliBili log: dynamic feed cache miss for mid ${space_id}, no recent videos`);
                 return new VideoPager([], false);
             }
