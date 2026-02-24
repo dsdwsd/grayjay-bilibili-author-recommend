@@ -15,7 +15,7 @@ const FAVORITES_URL_PREFIX = "https://www.bilibili.com/medialist/detail/ml";
 const FESTIVAL_URL_PREFIX = "https://www.bilibili.com/festival/";
 const POST_URL_PREFIX = "https://t.bilibili.com/";
 const DYNAMIC_FEED_API = "https://api.bilibili.com/x/polymer/web-dynamic/v1/feed/all";
-const DYNAMIC_FEED_CACHE_TTL = 2 * 60 * 1000; // 缓存2分钟
+const DYNAMIC_FEED_CACHE_TTL = 2 * 60 * 1000; // 2分钟缓存
 const WATCH_LATER_URL = "https://www.bilibili.com/watchlater/#/list";
 const PREMIUM_CONTENT_MESSAGE = "本片是大会员专享内容";
 const USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64; rv:131.0) Gecko/20100101 Firefox/131.0";
@@ -171,7 +171,8 @@ function init_local_storage(state) {
     local_storage_cache = {
         cid_cache: new Map(),
         space_cache: new Map(),
-        dynamic_feed_cache: null // { timestamp, items_by_mid: Map<number, PlatformVideo[]> }
+        // 动态Feed缓存：按作者mid分组，避免逐个频道API调用
+        dynamic_feed_cache: null // { timestamp: number, items_by_mid: Map<number, PlatformVideo[]> }
     };
     local_state = state === undefined ? init_session_info() : state;
 }
@@ -857,26 +858,27 @@ function getChannelCapabilities() {
     ], []);
 }
 function getChannelContents(url, type, order, filters) {
-    // 如果已登录，优先使用动态Feed缓存按mid分发
+    // 已登录时，优先从动态Feed缓存获取该频道的最新视频
+    // 这样只需1次API调用即可获取所有订阅更新，避免逐个频道调用失败
     if (bridge.isLoggedIn()) {
         try {
             const space_id = parse_space_url(url);
             const feed_map = _refreshDynamicFeedCache();
             if (feed_map !== null) {
-                const author_videos = feed_map.get(space_id);
-                if (author_videos && author_videos.length > 0) {
-                    log(`BiliBili log: dynamic feed cache hit for mid ${space_id}, ${author_videos.length} videos`);
-                    return new VideoPager(author_videos, false);
+                const cached_videos = feed_map.get(space_id);
+                if (cached_videos && cached_videos.length > 0) {
+                    log(`BiliBili log: dynamic feed cache hit for mid ${space_id}, ${cached_videos.length} videos`);
+                    return new VideoPager(cached_videos, false);
                 }
-                // 缓存中没有该作者的新视频 → 返回空（无新更新），不再调用单频道API
-                log(`BiliBili log: dynamic feed cache miss for mid ${space_id}, no recent videos`);
+                // 该作者在动态Feed中没有最新视频，返回空（无更新）
+                log(`BiliBili log: dynamic feed cache miss for mid ${space_id}, no recent updates`);
                 return new VideoPager([], false);
             }
         } catch (e) {
             log("BiliBili log: dynamic feed cache lookup failed: " + (e?.message || String(e)));
         }
     }
-    // 未登录或缓存失败 → 回退到原始逐频道API
+    // 未登录或缓存失败时，回退到原始逐频道API
     const MAX_RETRIES = 3;
     for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
         try {
@@ -893,21 +895,21 @@ function getChannelContents(url, type, order, filters) {
 }
 /**
  * 刷新动态Feed缓存，按作者mid分组
- * 缓存有效期内直接返回缓存数据，避免重复请求
+ * 缓存有效期内直接返回已有数据，避免重复API调用
  * @returns {Map<number, PlatformVideo[]> | null} 按mid分组的视频Map，失败返回null
  */
 function _refreshDynamicFeedCache() {
-    // 检查缓存是否仍有效
-    const cache = local_storage_cache.dynamic_feed_cache;
-    if (cache !== null && (Date.now() - cache.timestamp) < DYNAMIC_FEED_CACHE_TTL) {
-        return cache.items_by_mid;
-    }
     try {
+        const now = Date.now();
+        // 缓存未过期，直接返回
+        if (local_storage_cache.dynamic_feed_cache &&
+            now - local_storage_cache.dynamic_feed_cache.timestamp < DYNAMIC_FEED_CACHE_TTL) {
+            return local_storage_cache.dynamic_feed_cache.items_by_mid;
+        }
+        log("BiliBili log: refreshing dynamic feed cache...");
         const url = create_url(DYNAMIC_FEED_API, {
             type: "video"
         }).toString();
-        log("BiliBili log: refreshing dynamic feed cache...");
-        const now = Date.now();
         const raw_response = local_http.GET(url, {
             Host: "api.bilibili.com",
             Cookie: `buvid3=${local_state.buvid3}; buvid4=${local_state.buvid4}; b_nut=${local_state.b_nut}`,
@@ -922,7 +924,7 @@ function _refreshDynamicFeedCache() {
         }
         const response = JSON.parse(json);
         if (response.code !== 0) {
-            log("BiliBili log: dynamic feed error code: " + response.code);
+            log("BiliBili log: dynamic feed API error: " + response.code + " " + (response.message || ""));
             return null;
         }
         if (!response.data || !response.data.items) {
@@ -942,8 +944,8 @@ function _refreshDynamicFeedCache() {
                 const mid = module_author.mid;
                 const author_id = new PlatformID(PLATFORM, mid.toString(), plugin.config.id);
                 const video_id = new PlatformID(PLATFORM, archive.bvid, plugin.config.id);
-                let duration = 0;
                 const duration_str = archive.duration_text;
+                let duration = 0;
                 if (duration_str) {
                     const parts = duration_str.split(":");
                     if (parts.length === 2) {
@@ -953,12 +955,16 @@ function _refreshDynamicFeedCache() {
                     }
                 }
                 let view_count = 0;
-                const play_str = archive.stat?.play;
-                if (play_str) {
-                    if (typeof play_str === "number") {
-                        view_count = play_str;
-                    } else if (typeof play_str === "string") {
-                        view_count = play_str.includes("万") ? parseFloat(play_str) * 10000 : (parseInt(play_str) || 0);
+                const play_count_str = archive.stat?.play;
+                if (play_count_str) {
+                    if (typeof play_count_str === "number") {
+                        view_count = play_count_str;
+                    } else if (typeof play_count_str === "string") {
+                        if (play_count_str.includes("万")) {
+                            view_count = parseFloat(play_count_str) * 10000;
+                        } else {
+                            view_count = parseInt(play_count_str) || 0;
+                        }
                     }
                 }
                 const video = new PlatformVideo({
@@ -967,9 +973,11 @@ function _refreshDynamicFeedCache() {
                     url: `${VIDEO_URL_PREFIX}${archive.bvid}`,
                     thumbnails: new Thumbnails([new Thumbnail(archive.cover, HARDCODED_THUMBNAIL_QUALITY)]),
                     author: new PlatformAuthorLink(
-                        author_id, module_author.name,
+                        author_id,
+                        module_author.name,
                         `${SPACE_URL_PREFIX}${mid}`,
-                        module_author.face, undefined
+                        module_author.face,
+                        undefined
                     ),
                     duration,
                     viewCount: view_count,
@@ -981,14 +989,15 @@ function _refreshDynamicFeedCache() {
                     items_by_mid.set(mid, []);
                 }
                 items_by_mid.get(mid).push(video);
-            } catch (itemErr) {
-                log("BiliBili log: skip feed item: " + (itemErr?.message || ""));
+            } catch (itemError) {
+                log("BiliBili log: failed to parse feed item: " + (itemError?.message || String(itemError)));
+                continue;
             }
         }
-        log(`BiliBili log: dynamic feed cached ${items_by_mid.size} authors`);
+        log(`BiliBili log: dynamic feed cache refreshed, ${items_by_mid.size} authors, ${response.data.items.length} items`);
         local_storage_cache.dynamic_feed_cache = {
-            timestamp: Date.now(),
-            items_by_mid
+            timestamp: now,
+            items_by_mid: items_by_mid
         };
         return items_by_mid;
     } catch (e) {
