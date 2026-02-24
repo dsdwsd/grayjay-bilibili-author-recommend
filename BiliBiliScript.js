@@ -176,6 +176,21 @@ function init_local_storage(state) {
     };
     local_state = state === undefined ? init_session_info() : state;
 }
+
+function refresh_wbi_keys() {
+    try {
+        log("BiliBili log: refreshing WBI keys...");
+        const raw_response = nav_request(bridge.isLoggedIn());
+        const keys = process_wbi_keys(raw_response);
+        const mixin_constant_resp = mixin_constant_request();
+        const mixin_constant = process_mixin_constant(mixin_constant_resp);
+        local_state.mixin_key = getMixinKey(keys.wbi_img_key + keys.wbi_sub_key, mixin_constant);
+        log("BiliBili log: successfully refreshed WBI keys.");
+    } catch (e) {
+        log("BiliBili log: failed to refresh WBI keys: " + (e?.message || String(e)));
+    }
+}
+
 function nav_request(useAuthClient, builder) {
     const url = "https://api.bilibili.com/x/web-interface/nav";
     const runner = builder === undefined ? local_http : builder;
@@ -1494,9 +1509,17 @@ class SpaceVideosContentPager extends VideoPager {
             };
             local_storage_cache.space_cache.set(space_id, space_info);
             if (results[0].code === -352) {
-                throw new ScriptException("rate limited");
+                log("BiliBili log: space_videos_request rate limited (-352) on init. Refreshing WBI keys...");
+                refresh_wbi_keys();
+                const retry_response_raw = space_videos_request(space_id, initial_page, page_size, undefined, order, undefined);
+                const retry_response = JSON.parse(retry_response_raw.body);
+                if (retry_response.code === -352) {
+                    throw new ScriptException("rate limited");
+                }
+                space_videos_response = retry_response;
+            } else {
+                space_videos_response = results[0];
             }
-            space_videos_response = results[0];
         }
         else {
             const maybe_space_videos_response = JSON.parse(space_videos_request(space_id, initial_page, page_size, undefined, undefined).body);
@@ -1543,10 +1566,14 @@ class SpaceVideosContentPager extends VideoPager {
     }
     nextPage() {
         try {
-            const maybe_space_videos_response = JSON.parse(space_videos_request(this.space_id, this.next_page, this.page_size, undefined, undefined).body);
+            let maybe_space_videos_response = JSON.parse(space_videos_request(this.space_id, this.next_page, this.page_size, undefined, undefined).body);
             if (maybe_space_videos_response.code === -352) {
-                log("BiliBili log: rate limited on next page fetch");
-                throw new ScriptException("rate limited");
+                log("BiliBili log: rate limited on next page fetch. Refreshing WBI keys...");
+                refresh_wbi_keys();
+                maybe_space_videos_response = JSON.parse(space_videos_request(this.space_id, this.next_page, this.page_size, undefined, undefined).body);
+                if (maybe_space_videos_response.code === -352) {
+                    throw new ScriptException("rate limited");
+                }
             }
             if (maybe_space_videos_response.code !== 0 || !maybe_space_videos_response.data || !maybe_space_videos_response.data.list) {
                 log("BiliBili log: space_videos_request failed on nextPage");
