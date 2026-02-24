@@ -139,15 +139,15 @@ function init_session_info() {
     const dm_img_inter = `{"ds":[],"wh":[${wh[0]},${wh[1]},${wh[2]}],"of":[${value_one},${value_one * 2},${value_one}]}`;
     const b_nut = create_b_nut();
     const requests = [{
-            request: mixin_constant_request,
-            process: process_mixin_constant
-        }, {
-            request(builder) { return nav_request(false, builder); },
-            process: process_wbi_keys
-        }, {
-            request: cookie_request,
-            process(response) { return JSON.parse(response.body); }
-        }];
+        request: mixin_constant_request,
+        process: process_mixin_constant
+    }, {
+        request(builder) { return nav_request(false, builder); },
+        process: process_wbi_keys
+    }, {
+        request: cookie_request,
+        process(response) { return JSON.parse(response.body); }
+    }];
     const [mixin_constant, { wbi_img_key, wbi_sub_key }, finger_spi_response] = execute_requests(requests);
     const buvid3 = finger_spi_response.data.b_3;
     const buvid4 = finger_spi_response.data.b_4;
@@ -325,34 +325,34 @@ function format_home(home) {
                 const video_id = new PlatformID(PLATFORM, item.bvid, plugin.config.id);
                 const author_id = new PlatformID(PLATFORM, item.owner.mid.toString(), plugin.config.id);
                 return [new PlatformVideo({
-                        id: video_id,
-                        name: item.title,
-                        url: item.uri,
-                        thumbnails: new Thumbnails([new Thumbnail(item.pic, HARDCODED_THUMBNAIL_QUALITY)]),
-                        author: new PlatformAuthorLink(author_id, item.owner.name, `${SPACE_URL_PREFIX}${item.owner.mid}`, item.owner.face, fan_count),
-                        duration: item.duration,
-                        viewCount: item.stat.view,
-                        isLive: false,
-                        shareUrl: item.uri,
-                        datetime: item.pubdate
-                    })];
+                    id: video_id,
+                    name: item.title,
+                    url: item.uri,
+                    thumbnails: new Thumbnails([new Thumbnail(item.pic, HARDCODED_THUMBNAIL_QUALITY)]),
+                    author: new PlatformAuthorLink(author_id, item.owner.name, `${SPACE_URL_PREFIX}${item.owner.mid}`, item.owner.face, fan_count),
+                    duration: item.duration,
+                    viewCount: item.stat.view,
+                    isLive: false,
+                    shareUrl: item.uri,
+                    datetime: item.pubdate
+                })];
             }
             case "live": {
                 const fan_count = local_storage_cache.space_cache.get(item.owner.mid)?.num_fans;
                 const room_id = new PlatformID(PLATFORM, item.id.toString(), plugin.config.id);
                 const author_id = new PlatformID(PLATFORM, item.owner.mid.toString(), plugin.config.id);
                 return [new PlatformVideo({
-                        id: room_id,
-                        name: item.title,
-                        url: `${LIVE_ROOM_URL_PREFIX}${item.id}`,
-                        thumbnails: new Thumbnails([new Thumbnail(item.pic, HARDCODED_THUMBNAIL_QUALITY)]),
-                        author: new PlatformAuthorLink(author_id, item.owner.name, `${SPACE_URL_PREFIX}${item.owner.mid}`, item.owner.face, fan_count),
-                        viewCount: item.room_info.watched_show.num,
-                        isLive: true,
-                        shareUrl: `${LIVE_ROOM_URL_PREFIX}${item.id}`,
-                        // TODO load from cache
-                        datetime: HARDCODED_ZERO
-                    })];
+                    id: room_id,
+                    name: item.title,
+                    url: `${LIVE_ROOM_URL_PREFIX}${item.id}`,
+                    thumbnails: new Thumbnails([new Thumbnail(item.pic, HARDCODED_THUMBNAIL_QUALITY)]),
+                    author: new PlatformAuthorLink(author_id, item.owner.name, `${SPACE_URL_PREFIX}${item.owner.mid}`, item.owner.face, fan_count),
+                    viewCount: item.room_info.watched_show.num,
+                    isLive: true,
+                    shareUrl: `${LIVE_ROOM_URL_PREFIX}${item.id}`,
+                    // TODO load from cache
+                    datetime: HARDCODED_ZERO
+                })];
             }
             default:
                 throw assert_exhaustive(item, `unhandled type on home page item ${item}`);
@@ -380,16 +380,16 @@ function get_suggestions(query) {
     return suggestions_response.result.tag.map(function (entry) { return entry.term; });
 }
 function getSearchCapabilities() {
-    return new ResultCapabilities([Type.Feed.Mixed], [Type.Order.Chronological, Type.Order.Views, Type.Order.Favorites], 
-    // TODO implement category filtering
-    [new FilterGroup("期间", // Duration
-        [
-            new FilterCapability("全部时长", "0", "全部时长"), // full duration
-            new FilterCapability("10分钟以下", "1", "10分钟以下"), // Under 10 minutes
-            new FilterCapability("10-30分钟", "2", "10-30分钟"), // 10-30 minutes
-            new FilterCapability("30-60分钟", "3", "30-60分钟"), // 30-60 minutes
-            new FilterCapability("60分钟以上", "4", "60分钟以上"), // More than 60 minutes
-        ], false, "DURATION_FILTER")]);
+    return new ResultCapabilities([Type.Feed.Mixed], [Type.Order.Chronological, Type.Order.Views, Type.Order.Favorites],
+        // TODO implement category filtering
+        [new FilterGroup("期间", // Duration
+            [
+                new FilterCapability("全部时长", "0", "全部时长"), // full duration
+                new FilterCapability("10分钟以下", "1", "10分钟以下"), // Under 10 minutes
+                new FilterCapability("10-30分钟", "2", "10-30分钟"), // 10-30 minutes
+                new FilterCapability("30-60分钟", "3", "30-60分钟"), // 30-60 minutes
+                new FilterCapability("60分钟以上", "4", "60分钟以上"), // More than 60 minutes
+            ], false, "DURATION_FILTER")]);
 }
 function search(query, type, order, filters) {
     if (type === null) {
@@ -736,12 +736,12 @@ function isChannelUrl(url) {
 function getChannel(url) {
     const space_id = parse_space_url(url);
     const requests = [{
-            request(builder) { return space_request(space_id, builder); },
-            process(response) { return JSON.parse(response.body); }
-        }, {
-            request(builder) { return fan_count_request(space_id, builder); },
-            process(response) { return JSON.parse(response.body); }
-        }];
+        request(builder) { return space_request(space_id, builder); },
+        process(response) { return JSON.parse(response.body); }
+    }, {
+        request(builder) { return fan_count_request(space_id, builder); },
+        process(response) { return JSON.parse(response.body); }
+    }];
     const [space, fan_count_response] = execute_requests(requests);
     if (space.code !== 0) {
         log("BiliBili log: Failed loading space info");
@@ -867,12 +867,12 @@ function get_space_live_pager(space_id) {
     let space_info = local_storage_cache.space_cache.get(space_id);
     if (space_info === undefined) {
         const requests = [{
-                request(builder) { return space_request(space_id, builder); },
-                process(response) { return JSON.parse(response.body); }
-            }, {
-                request(builder) { return fan_count_request(space_id, builder); },
-                process(response) { return JSON.parse(response.body); }
-            }];
+            request(builder) { return space_request(space_id, builder); },
+            process(response) { return JSON.parse(response.body); }
+        }, {
+            request(builder) { return fan_count_request(space_id, builder); },
+            process(response) { return JSON.parse(response.body); }
+        }];
         const [space, fan_count_response] = execute_requests(requests);
         if (space.code !== 0) {
             log("BiliBili log: Failed loading space info");
@@ -899,18 +899,18 @@ function get_space_live_pager(space_id) {
     const live_room = space_info.live_room !== null
         && space_info.live_room.live_status === true
         ? [new PlatformVideo({
-                id: new PlatformID(PLATFORM, space_info.live_room.roomid.toString(), plugin.config.id),
-                name: space_info.live_room.title,
-                url: `${LIVE_ROOM_URL_PREFIX}${space_info.live_room.roomid}`,
-                thumbnails: new Thumbnails([new Thumbnail(space_info.live_room.cover, HARDCODED_THUMBNAIL_QUALITY)]),
-                author,
-                viewCount: space_info.live_room.watched_show.num,
-                isLive: true,
-                shareUrl: `${LIVE_ROOM_URL_PREFIX}${space_info.live_room.roomid}`,
-                // TODO load from cache. "now" is incorrect but it does result in sorting to the top
-                // It would be better however to load the actual stream start time
-                datetime: Date.now() / 1000
-            })]
+            id: new PlatformID(PLATFORM, space_info.live_room.roomid.toString(), plugin.config.id),
+            name: space_info.live_room.title,
+            url: `${LIVE_ROOM_URL_PREFIX}${space_info.live_room.roomid}`,
+            thumbnails: new Thumbnails([new Thumbnail(space_info.live_room.cover, HARDCODED_THUMBNAIL_QUALITY)]),
+            author,
+            viewCount: space_info.live_room.watched_show.num,
+            isLive: true,
+            shareUrl: `${LIVE_ROOM_URL_PREFIX}${space_info.live_room.roomid}`,
+            // TODO load from cache. "now" is incorrect but it does result in sorting to the top
+            // It would be better however to load the actual stream start time
+            datetime: Date.now() / 1000
+        })]
         : [];
     return new VideoPager(live_room, false);
 }
@@ -1229,17 +1229,17 @@ class SpaceVideosContentPager extends VideoPager {
         let space_videos_response;
         if (space_info === undefined) {
             const requests = [{
-                    request(builder) {
-                        return space_videos_request(space_id, initial_page, page_size, undefined, order, builder);
-                    },
-                    process(response) { return JSON.parse(response.body); }
-                }, {
-                    request(builder) { return space_request(space_id, builder); },
-                    process(response) { return JSON.parse(response.body); }
-                }, {
-                    request(builder) { return fan_count_request(space_id, builder); },
-                    process(response) { return JSON.parse(response.body); }
-                }];
+                request(builder) {
+                    return space_videos_request(space_id, initial_page, page_size, undefined, order, builder);
+                },
+                process(response) { return JSON.parse(response.body); }
+            }, {
+                request(builder) { return space_request(space_id, builder); },
+                process(response) { return JSON.parse(response.body); }
+            }, {
+                request(builder) { return fan_count_request(space_id, builder); },
+                process(response) { return JSON.parse(response.body); }
+            }];
             const results = execute_requests(requests);
             const space = results[1];
             if (space.code !== 0) {
@@ -1474,19 +1474,19 @@ function format_space_posts(space_posts_response, space_id, space_info) {
         const reference_string = reference ? `<a href="${`${POST_URL_PREFIX}${reference.id_str}`}">${POST_URL_PREFIX}${reference.id_str}</a>` : undefined;
         const content = (primary_content ? primary_content + "\n" : "") + (topic_string ?? "") + (major_links ?? "") + (reference_string ?? "");
         return [new PlatformPostDetails({
-                thumbnails,
-                images,
-                description: content,
-                // as far as i can tell posts don't have names
-                name: MISSING_NAME,
-                url: `${POST_URL_PREFIX}${space_post.id_str}`,
-                id: new PlatformID(PLATFORM, space_post.id_str, plugin.config.id),
-                rating: new RatingLikes(space_post.modules.module_stat.like.count),
-                textType: Type.Text.HTML,
-                author,
-                content,
-                datetime: space_post.modules.module_author.pub_ts
-            })];
+            thumbnails,
+            images,
+            description: content,
+            // as far as i can tell posts don't have names
+            name: MISSING_NAME,
+            url: `${POST_URL_PREFIX}${space_post.id_str}`,
+            id: new PlatformID(PLATFORM, space_post.id_str, plugin.config.id),
+            rating: new RatingLikes(space_post.modules.module_stat.like.count),
+            textType: Type.Text.HTML,
+            author,
+            content,
+            datetime: space_post.modules.module_author.pub_ts
+        })];
     });
 }
 function space_favorites_request(space_id, builder) {
@@ -1626,17 +1626,17 @@ class ChannelVideoResultsPager extends ContentPager {
         let search_response;
         if (space_info === undefined) {
             const requests = [{
-                    request(builder) { return space_request(space_id, builder); },
-                    process(response) { return JSON.parse(response.body); }
-                }, {
-                    request(builder) { return fan_count_request(space_id, builder); },
-                    process(response) { return JSON.parse(response.body); }
-                }, {
-                    request(builder) {
-                        return space_videos_request(space_id, initial_page, page_size, query, order, builder);
-                    },
-                    process(response) { return JSON.parse(response.body); }
-                }];
+                request(builder) { return space_request(space_id, builder); },
+                process(response) { return JSON.parse(response.body); }
+            }, {
+                request(builder) { return fan_count_request(space_id, builder); },
+                process(response) { return JSON.parse(response.body); }
+            }, {
+                request(builder) {
+                    return space_videos_request(space_id, initial_page, page_size, query, order, builder);
+                },
+                process(response) { return JSON.parse(response.body); }
+            }];
             const [space, fan_count_response, local_search_response] = execute_requests(requests);
             if (local_search_response.code === -352) {
                 throw new ScriptException("rate limited");
@@ -1904,15 +1904,15 @@ function get_video_details(content_type, content_id) {
         case "bangumi/play/ep": {
             const episode_id = parseInt(content_id);
             const requests = [{
-                    request(builder) { return episode_play_request(episode_id, builder); },
-                    process(response) { return JSON.parse(response.body); }
-                }, {
-                    request(builder) { return season_request({ type: "episode", id: episode_id }, builder); },
-                    process(response) { return JSON.parse(response.body); }
-                }, {
-                    request(builder) { return episode_info_request(episode_id, builder); },
-                    process(response) { return JSON.parse(response.body); }
-                }];
+                request(builder) { return episode_play_request(episode_id, builder); },
+                process(response) { return JSON.parse(response.body); }
+            }, {
+                request(builder) { return season_request({ type: "episode", id: episode_id }, builder); },
+                process(response) { return JSON.parse(response.body); }
+            }, {
+                request(builder) { return episode_info_request(episode_id, builder); },
+                process(response) { return JSON.parse(response.body); }
+            }];
             const [episode_response, season_response, episode_info_response] = execute_requests(requests);
             // region restricted
             if (episode_response.code === -10403) {
@@ -1961,12 +1961,12 @@ function get_video_details(content_type, content_id) {
         case "cheese/play/ep": {
             const episode_id = parseInt(content_id);
             const requests = [{
-                    request(builder) { return course_play_request(episode_id, builder); },
-                    process(response) { return JSON.parse(response.body); }
-                }, {
-                    request(builder) { return course_request({ type: "episode", id: episode_id }, builder); },
-                    process(response) { return JSON.parse(response.body); }
-                }];
+                request(builder) { return course_play_request(episode_id, builder); },
+                process(response) { return JSON.parse(response.body); }
+            }, {
+                request(builder) { return course_request({ type: "episode", id: episode_id }, builder); },
+                process(response) { return JSON.parse(response.body); }
+            }];
             const [episode_play_response, season_response] = execute_requests(requests);
             // premium content
             if (episode_play_response.code === -403) {
@@ -2581,13 +2581,13 @@ class BangumiPager extends PlaylistPager {
     page_size;
     constructor(query, initial_page, page_size) {
         const requests = [{
-                request(builder) { return search_request(query, initial_page, page_size, "media_bangumi", undefined, undefined, builder); },
-                process(response) { return extract_search_results(response, "media_bangumi", initial_page, page_size); }
-            },
-            {
-                request(builder) { return search_request(query, initial_page, page_size, "media_ft", undefined, undefined, builder); },
-                process(response) { return extract_search_results(response, "media_ft", initial_page, page_size); }
-            },];
+            request(builder) { return search_request(query, initial_page, page_size, "media_bangumi", undefined, undefined, builder); },
+            process(response) { return extract_search_results(response, "media_bangumi", initial_page, page_size); }
+        },
+        {
+            request(builder) { return search_request(query, initial_page, page_size, "media_ft", undefined, undefined, builder); },
+            process(response) { return extract_search_results(response, "media_ft", initial_page, page_size); }
+        },];
         const results = execute_requests(requests);
         const shows = results[0].search_results;
         const movies = results[1].search_results;
@@ -2603,13 +2603,13 @@ class BangumiPager extends PlaylistPager {
     }
     nextPage() {
         const requests = [{
-                request: (builder) => { return search_request(this.query, this.next_page, this.page_size, "media_bangumi", undefined, undefined, builder); },
-                process: (response) => { return extract_search_results(response, "media_bangumi", this.next_page, this.page_size); }
-            },
-            {
-                request: (builder) => { return search_request(this.query, this.next_page, this.page_size, "media_ft", undefined, undefined, builder); },
-                process: (response) => { return extract_search_results(response, "media_ft", this.next_page, this.page_size); }
-            },];
+            request: (builder) => { return search_request(this.query, this.next_page, this.page_size, "media_bangumi", undefined, undefined, builder); },
+            process: (response) => { return extract_search_results(response, "media_bangumi", this.next_page, this.page_size); }
+        },
+        {
+            request: (builder) => { return search_request(this.query, this.next_page, this.page_size, "media_ft", undefined, undefined, builder); },
+            process: (response) => { return extract_search_results(response, "media_ft", this.next_page, this.page_size); }
+        },];
         const results = execute_requests(requests);
         const shows = results[0].search_results;
         const movies = results[1].search_results;
@@ -2666,15 +2666,15 @@ function getPlaylist(url) {
             let space_info = local_storage_cache.space_cache.get(space_id);
             if (space_info === undefined) {
                 const requests = [{
-                        request(builder) { return space_request(space_id, builder); },
-                        process(response) { return JSON.parse(response.body); }
-                    }, {
-                        request(builder) { return fan_count_request(space_id, builder); },
-                        process(response) { return JSON.parse(response.body); }
-                    }, {
-                        request(builder) { return collection_request(space_id, collection_id, initial_page, page_size, builder); },
-                        process(response) { return JSON.parse(response.body); }
-                    }];
+                    request(builder) { return space_request(space_id, builder); },
+                    process(response) { return JSON.parse(response.body); }
+                }, {
+                    request(builder) { return fan_count_request(space_id, builder); },
+                    process(response) { return JSON.parse(response.body); }
+                }, {
+                    request(builder) { return collection_request(space_id, collection_id, initial_page, page_size, builder); },
+                    process(response) { return JSON.parse(response.body); }
+                }];
                 const results = execute_requests(requests);
                 const [space, fan_info] = [results[0], results[1]];
                 if (space.code !== 0) {
@@ -2731,15 +2731,15 @@ function getPlaylist(url) {
             let space_info = local_storage_cache.space_cache.get(space_id);
             if (space_info === undefined) {
                 const requests = [{
-                        request(builder) { return space_request(space_id, builder); },
-                        process(response) { return JSON.parse(response.body); }
-                    }, {
-                        request(builder) { return fan_count_request(space_id, builder); },
-                        process(response) { return JSON.parse(response.body); }
-                    }, {
-                        request(builder) { return series_request(space_id, series_id, initial_page, page_size, builder); },
-                        process(response) { return JSON.parse(response.body); }
-                    }];
+                    request(builder) { return space_request(space_id, builder); },
+                    process(response) { return JSON.parse(response.body); }
+                }, {
+                    request(builder) { return fan_count_request(space_id, builder); },
+                    process(response) { return JSON.parse(response.body); }
+                }, {
+                    request(builder) { return series_request(space_id, series_id, initial_page, page_size, builder); },
+                    process(response) { return JSON.parse(response.body); }
+                }];
                 const results = execute_requests(requests);
                 const [space, fan_info] = [results[0], results[1]];
                 if (space.code !== 0) {
@@ -3682,8 +3682,8 @@ function create_signed_url(base_url, params, special_params) {
         .entries(augmented_params)
         .sort(function (a, b) { return a[0].localeCompare(b[0]); })
         .map(function ([name, value]) {
-        return `${name}=${encodeURIComponent(value)}`;
-    })
+            return `${name}=${encodeURIComponent(value)}`;
+        })
         .join("&");
     const w_rid = local_utility.md5String(sorted_query_string + local_state.mixin_key);
     return new URL(`${base_url}?${sorted_query_string}&w_rid=${w_rid}`);
@@ -3855,5 +3855,5 @@ function execute_requests(requests) {
 console.log(assert_never, log_passthrough);
 // export statements are removed during build step
 // used for unit testing in BiliBiliScript.test.ts
-export { interleave_two, getMixinKey, mixin_constant_request, process_mixin_constant, load_video_details, create_signed_url, nav_request, process_wbi_keys, init_local_storage, log_passthrough, assert_never };
+// export { interleave_two, getMixinKey, mixin_constant_request, process_mixin_constant, load_video_details, create_signed_url, nav_request, process_wbi_keys, init_local_storage, log_passthrough, assert_never };
 //# sourceMappingURL=BiliBiliScript.js.map
