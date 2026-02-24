@@ -749,16 +749,58 @@ function isChannelUrl(url) {
 }
 function getChannel(url) {
     const space_id = parse_space_url(url);
-    const requests = [{
-        request(builder) { return space_request(space_id, builder); },
-        process(response) { return JSON.parse(response.body); }
-    }, {
-        request(builder) { return fan_count_request(space_id, builder); },
-        process(response) { return JSON.parse(response.body); }
-    }];
-    const [space, fan_count_response] = execute_requests(requests);
-    if (space.code !== 0) {
-        log("BiliBili log: Failed loading space info");
+    try {
+        const requests = [{
+            request(builder) { return space_request(space_id, builder); },
+            process(response) { return JSON.parse(response.body); }
+        }, {
+            request(builder) { return fan_count_request(space_id, builder); },
+            process(response) { return JSON.parse(response.body); }
+        }];
+        const [space, fan_count_response] = execute_requests(requests);
+        if (space.code !== 0) {
+            log("BiliBili log: Failed loading space info");
+            return new PlatformChannel({
+                id: new PlatformID(PLATFORM, space_id.toString(), plugin.config.id),
+                name: NAME_LOAD_FAILED,
+                thumbnail: "",
+                url: `${SPACE_URL_PREFIX}${space_id}`,
+                links: {
+                    'BiliBili': `${SPACE_URL_PREFIX}${space_id}`
+                }
+            });
+        }
+        // cache results
+        local_storage_cache.space_cache.set(space_id, {
+            num_fans: fan_count_response.data.follower,
+            name: space.data.name,
+            face: space.data.face,
+            live_room: space.data.live_room === null ? null : {
+                title: space.data.live_room.title,
+                roomid: space.data.live_room.roomid,
+                live_status: space.data.live_room.liveStatus === 1,
+                cover: space.data.live_room.cover, watched_show: {
+                    num: space.data.live_room.watched_show.num
+                }
+            }
+        });
+        const is_default_banner = new RegExp(/cb1c3ef50e22b6096fde67febe863494caefebad/).test(space.data.top_photo);
+        const channel = new PlatformChannel({
+            id: new PlatformID(PLATFORM, space_id.toString(), plugin.config.id),
+            name: space.data.name,
+            thumbnail: space.data.face,
+            subscribers: fan_count_response.data.follower,
+            description: space.data.sign,
+            url: `${SPACE_URL_PREFIX}${space_id}`,
+            links: {
+                'BiliBili': `${SPACE_URL_PREFIX}${space_id}`
+            }
+        });
+        return is_default_banner ? channel : {
+            ...channel, banner: space.data.top_photo
+        };
+    } catch (e) {
+        log("BiliBili log: getChannel error for " + space_id + ": " + (e?.message || String(e)));
         return new PlatformChannel({
             id: new PlatformID(PLATFORM, space_id.toString(), plugin.config.id),
             name: NAME_LOAD_FAILED,
@@ -769,35 +811,6 @@ function getChannel(url) {
             }
         });
     }
-    // cache results
-    local_storage_cache.space_cache.set(space_id, {
-        num_fans: fan_count_response.data.follower,
-        name: space.data.name,
-        face: space.data.face,
-        live_room: space.data.live_room === null ? null : {
-            title: space.data.live_room.title,
-            roomid: space.data.live_room.roomid,
-            live_status: space.data.live_room.liveStatus === 1,
-            cover: space.data.live_room.cover, watched_show: {
-                num: space.data.live_room.watched_show.num
-            }
-        }
-    });
-    const is_default_banner = new RegExp(/cb1c3ef50e22b6096fde67febe863494caefebad/).test(space.data.top_photo);
-    const channel = new PlatformChannel({
-        id: new PlatformID(PLATFORM, space_id.toString(), plugin.config.id),
-        name: space.data.name,
-        thumbnail: space.data.face,
-        subscribers: fan_count_response.data.follower,
-        description: space.data.sign,
-        url: `${SPACE_URL_PREFIX}${space_id}`,
-        links: {
-            'BiliBili': `${SPACE_URL_PREFIX}${space_id}`
-        }
-    });
-    return is_default_banner ? channel : {
-        ...channel, banner: space.data.top_photo
-    };
 }
 function parse_space_url(url) {
     const match_results = url.match(SPACE_URL_REGEX);
@@ -879,18 +892,23 @@ function getChannelContents(url, type, order, filters) {
         }
     }
     // 未登录或缓存失败时，回退到原始逐频道API
-    const MAX_RETRIES = 3;
-    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-        try {
-            return _getChannelContentsInner(url, type, order, filters);
-        } catch (e) {
-            const msg = e?.message ?? String(e);
-            if (attempt < MAX_RETRIES && msg.includes("is not valid JSON")) {
-                log(`BiliBili log: getChannelContents attempt ${attempt} failed (HTML response), retrying...`);
-                continue;
+    try {
+        const MAX_RETRIES = 3;
+        for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+            try {
+                return _getChannelContentsInner(url, type, order, filters);
+            } catch (e) {
+                const msg = e?.message ?? String(e);
+                if (attempt < MAX_RETRIES && msg.includes("is not valid JSON")) {
+                    log(`BiliBili log: getChannelContents attempt ${attempt} failed (HTML response), retrying...`);
+                    continue;
+                }
+                throw e;
             }
-            throw e;
         }
+    } catch (e) {
+        log("BiliBili log: getChannelContents fallback error: " + (e?.message || String(e)));
+        return new VideoPager([], false);
     }
 }
 /**
