@@ -14,6 +14,8 @@ const COURSE_EPISODE_URL_PREFIX = "https://www.bilibili.com/cheese/play/ep";
 const FAVORITES_URL_PREFIX = "https://www.bilibili.com/medialist/detail/ml";
 const FESTIVAL_URL_PREFIX = "https://www.bilibili.com/festival/";
 const POST_URL_PREFIX = "https://t.bilibili.com/";
+const DYNAMIC_FEED_URL = "https://t.bilibili.com/";
+const DYNAMIC_FEED_API = "https://api.bilibili.com/x/polymer/web-dynamic/v1/feed/all";
 const WATCH_LATER_URL = "https://www.bilibili.com/watchlater/#/list";
 const PREMIUM_CONTENT_MESSAGE = "本片是大会员专享内容";
 const USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64; rv:131.0) Gecko/20100101 Firefox/131.0";
@@ -735,6 +737,10 @@ function format_space_results(space_search_results) {
 // example of handled urls
 // https://space.bilibili.com/491461718
 function isChannelUrl(url) {
+    // 动态订阅虚拟频道
+    if (url === DYNAMIC_FEED_URL || url === "https://t.bilibili.com") {
+        return true;
+    }
     // Some playlist urls are also Space urls
     // for example
     // https://space.bilibili.com/491461718/favlist?fid=3153093518
@@ -744,6 +750,17 @@ function isChannelUrl(url) {
     return SPACE_URL_REGEX.test(url);
 }
 function getChannel(url) {
+    // 处理动态订阅虚拟频道
+    if (url === DYNAMIC_FEED_URL || url === "https://t.bilibili.com") {
+        return new PlatformChannel({
+            id: new PlatformID(PLATFORM, "dynamic_feed", plugin.config.id),
+            name: "B站动态订阅",
+            thumbnail: "",
+            url: DYNAMIC_FEED_URL,
+            description: "通过B站动态Feed获取全部订阅更新",
+            links: { 'BiliBili': DYNAMIC_FEED_URL }
+        });
+    }
     const space_id = parse_space_url(url);
     const requests = [{
         request(builder) { return space_request(space_id, builder); },
@@ -854,6 +871,10 @@ function getChannelCapabilities() {
     ], []);
 }
 function getChannelContents(url, type, order, filters) {
+    // 处理动态订阅虚拟频道
+    if (url === DYNAMIC_FEED_URL || url === "https://t.bilibili.com") {
+        return _getDynamicFeedContents();
+    }
     const MAX_RETRIES = 3;
     for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
         try {
@@ -867,6 +888,83 @@ function getChannelContents(url, type, order, filters) {
             throw e;
         }
     }
+}
+/**
+ * 通过B站动态Feed API获取全部订阅更新
+ * 对应 https://t.bilibili.com/ 页面
+ */
+function _getDynamicFeedContents() {
+    const url = create_url(DYNAMIC_FEED_API, {
+        type: "video",
+        page: "1"
+    }).toString();
+    const now = Date.now();
+    const json = local_http.GET(url, {
+        Host: "api.bilibili.com",
+        Cookie: `buvid3=${local_state.buvid3}; buvid4=${local_state.buvid4}; b_nut=${local_state.b_nut}`,
+        Referer: "https://t.bilibili.com/",
+        "User-Agent": USER_AGENT
+    }, true).body;
+    log_network_call(now);
+    const response = JSON.parse(json);
+    if (response.code !== 0) {
+        log("BiliBili log: dynamic feed request failed, code: " + response.code);
+        return new VideoPager([], false);
+    }
+    const items = response.data.items || [];
+    // 只取最新5条视频动态
+    const videos = [];
+    for (const item of items) {
+        if (videos.length >= 5) break;
+        if (item.type !== "DYNAMIC_TYPE_AV") continue;
+        const module_author = item.modules.module_author;
+        const module_dynamic = item.modules.module_dynamic;
+        const archive = module_dynamic.major.archive;
+        if (!archive) continue;
+        const author_id = new PlatformID(PLATFORM, module_author.mid.toString(), plugin.config.id);
+        const video_id = new PlatformID(PLATFORM, archive.bvid, plugin.config.id);
+        const duration_str = archive.duration_text;
+        let duration = 0;
+        if (duration_str) {
+            const parts = duration_str.split(":");
+            if (parts.length === 2) {
+                duration = parseInt(parts[0]) * 60 + parseInt(parts[1]);
+            } else if (parts.length === 3) {
+                duration = parseInt(parts[0]) * 3600 + parseInt(parts[1]) * 60 + parseInt(parts[2]);
+            }
+        }
+        const play_count_str = archive.stat?.play;
+        let view_count = 0;
+        if (play_count_str) {
+            if (typeof play_count_str === "number") {
+                view_count = play_count_str;
+            } else if (play_count_str.includes("万")) {
+                view_count = parseFloat(play_count_str) * 10000;
+            } else {
+                view_count = parseInt(play_count_str) || 0;
+            }
+        }
+        videos.push(new PlatformVideo({
+            id: video_id,
+            name: archive.title,
+            url: `${VIDEO_URL_PREFIX}${archive.bvid}`,
+            thumbnails: new Thumbnails([new Thumbnail(archive.cover, HARDCODED_THUMBNAIL_QUALITY)]),
+            author: new PlatformAuthorLink(
+                author_id,
+                module_author.name,
+                `${SPACE_URL_PREFIX}${module_author.mid}`,
+                module_author.face,
+                undefined
+            ),
+            duration,
+            viewCount: view_count,
+            isLive: false,
+            shareUrl: `${VIDEO_URL_PREFIX}${archive.bvid}`,
+            datetime: Number(module_author.pub_ts)
+        }));
+    }
+    log(`BiliBili log: dynamic feed returned ${videos.length} videos`);
+    return new VideoPager(videos, false);
 }
 function _getChannelContentsInner(url, type, order, filters) {
     if (type === null) {
@@ -3543,18 +3641,9 @@ function getUserSubscriptions() {
     if (!bridge.isLoggedIn()) {
         throw new ScriptException("unreachable");
     }
-    const nav_response = JSON.parse(nav_request(true).body);
-    const subscriptions = [];
-    let total = Number.MAX_SAFE_INTEGER;
-    let page = 1;
-    const page_size = 20;
-    while (total > page * page_size) {
-        const subscriptions_response = JSON.parse(user_subscriptions_request(nav_response.data.mid, page, 20).body);
-        total = subscriptions_response.data.total;
-        subscriptions.push(...subscriptions_response.data.list.map(function (subscription) { return `${SPACE_URL_PREFIX}${subscription.mid}`; }));
-        page += 1;
-    }
-    return subscriptions;
+    // 使用动态Feed虚拟频道作为唯一订阅源
+    // 这样Grayjay只需检查一个"频道"即可获取所有B站订阅更新
+    return [DYNAMIC_FEED_URL];
 }
 function user_subscriptions_request(mid, page, page_size, builder) {
     const following_url = "https://api.bilibili.com/x/relation/followings";

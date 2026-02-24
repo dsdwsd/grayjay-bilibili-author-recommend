@@ -1,13 +1,13 @@
 {
     "name": "哔哩哔哩（作者推荐版）",
-    "description": "B站视频插件 - 推荐区仅显示当前作者的视频\n\n登录后可解锁更高画质、字幕和会员内容",
+    "description": "B站视频插件 - 推荐区仅显示当前作者的视频\n\n登录后订阅页通过动态Feed一键获取全部订阅更新\n\n登录后可解锁更高画质、字幕和会员内容",
     "author": "dsdwsd",
     "authorUrl": "https://github.com/dsdwsd",
     "platformUrl": "https://bilibili.com",
     "sourceUrl": "https://raw.githubusercontent.com/dsdwsd/grayjay-bilibili-author-recommend/master/BiliBiliConfig.json",
     "repositoryUrl": "https://github.com/dsdwsd/grayjay-bilibili-author-recommend",
     "scriptUrl": "https://raw.githubusercontent.com/dsdwsd/grayjay-bilibili-author-recommend/master/BiliBiliScript.js",
-    "version": 1,
+    "version": 2,
     "iconUrl": "https://raw.githubusercontent.com/dsdwsd/grayjay-bilibili-author-recommend/master/BiliBiliIcon.png",
     "id": "bilibili-author-recommend",
     "packages": [
@@ -26,7 +26,8 @@
         "d1--ov-gotcha07.bilivideo.com",
         ".bilivideo.com",
         "*.bilivideo.com",
-        "space.bilibili.com"
+        "space.bilibili.com",
+        "t.bilibili.com"
     ],
     "authentication": {
         "loginUrl": "https://passport.bilibili.com/h5-app/passport/login",
