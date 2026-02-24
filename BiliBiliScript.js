@@ -883,9 +883,9 @@ function getChannelContents(url, type, order, filters) {
                     log(`BiliBili log: dynamic feed cache hit for mid ${space_id}, ${cached_videos.length} videos`);
                     return new VideoPager(cached_videos, false);
                 }
-                // 该作者在动态Feed中没有最新视频，返回空（无更新）
-                log(`BiliBili log: dynamic feed cache miss for mid ${space_id}, no recent updates`);
-                return new VideoPager([], false);
+                // 缓存未命中（该作者近期无动态），回退到原始API获取频道内容
+                log(`BiliBili log: dynamic feed cache miss for mid ${space_id}, falling back to per-channel API`);
+                // 不返回空，让下面的原始API处理
             }
         } catch (e) {
             log("BiliBili log: dynamic feed cache lookup failed: " + (e?.message || String(e)));
