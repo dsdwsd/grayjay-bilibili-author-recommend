@@ -141,7 +141,7 @@ function init_session_info() {
     const dm_img_inter = `{"ds":[],"wh":[${wh[0]},${wh[1]},${wh[2]}],"of":[${value_one},${value_one * 2},${value_one}]}`;
     const b_nut = create_b_nut();
     const requests = [{
-        request(builder) { return nav_request(false, builder); },
+        request(builder) { return nav_request(bridge.isLoggedIn(), builder); },
         process: process_wbi_keys
     }, {
         request: cookie_request,
@@ -1059,10 +1059,33 @@ function _getChannelContentsInner(url, type, order, filters) {
     const space_id = parse_space_url(url);
     switch (type) {
         case Type.Feed.Videos:
-            return new SpaceVideosContentPager(space_id, 1, 25, order === null ? Type.Order.Chronological : order);
+            try {
+                return new SpaceVideosContentPager(space_id, 1, 25, order === null ? Type.Order.Chronological : order);
+            } catch (e) {
+                log("BiliBili log: SpaceVideosContentPager failed: " + (e?.message || String(e)));
+                if (bridge.isLoggedIn()) {
+                    const feed_map = _refreshDynamicFeedCache();
+                    if (feed_map && feed_map.has(space_id)) {
+                        log("BiliBili log: falling back to dynamic feed cache completely");
+                        return new VideoPager(feed_map.get(space_id), false);
+                    }
+                }
+                return new VideoPager([], false);
+            }
         case Type.Feed.Mixed: {
             const posts_pager = new SpacePostsContentPager(space_id);
-            const videos_pager = new SpaceVideosContentPager(space_id, 1, 25, order === null ? Type.Order.Chronological : order);
+            let videos_pager;
+            try {
+                videos_pager = new SpaceVideosContentPager(space_id, 1, 25, order === null ? Type.Order.Chronological : order);
+            } catch (e) {
+                log("BiliBili log: Mixed video pager failed: " + (e?.message || String(e)));
+                let fallback_videos = [];
+                if (bridge.isLoggedIn()) {
+                    const feed_map = _refreshDynamicFeedCache();
+                    if (feed_map && feed_map.has(space_id)) fallback_videos = feed_map.get(space_id);
+                }
+                videos_pager = new VideoPager(fallback_videos, false);
+            }
             const live_pager = get_space_live_pager(space_id);
             return new CompositeContentPager([live_pager, videos_pager, posts_pager]);
         }
@@ -1478,26 +1501,68 @@ class SpaceVideosContentPager extends VideoPager {
         else {
             const maybe_space_videos_response = JSON.parse(space_videos_request(space_id, initial_page, page_size, undefined, undefined).body);
             if (maybe_space_videos_response.code === -352) {
+                log("BiliBili log: space_videos_request rate limited on next page");
                 throw new ScriptException("rate limited");
+            }
+            if (maybe_space_videos_response.code !== 0) {
+                log("BiliBili log: space_videos_request failed on next page");
+                throw new ScriptException("space_videos_request failed");
             }
             space_videos_response = maybe_space_videos_response;
         }
-        const has_more = space_videos_response.data.page.count > initial_page * page_size;
-        super(format_space_videos(space_videos_response, space_id, space_info), has_more);
+
+        let has_more = false;
+        let formatted_videos = [];
+        if (space_videos_response && space_videos_response.data && space_videos_response.data.list && space_videos_response.data.list.vlist) {
+            has_more = space_videos_response.data.page.count > initial_page * page_size;
+            formatted_videos = format_space_videos(space_videos_response, space_id, space_info);
+        } else {
+            log("BiliBili log: failed to parse space_videos_response, falling back to dynamic feed");
+            // If the structure is missing or something else is wrong, we fallback to dynamic feed caching
+            // Attempt to get from dynamic feed if available
+            try {
+                if (bridge.isLoggedIn()) {
+                    const feed_map = _refreshDynamicFeedCache();
+                    if (feed_map !== null) {
+                        const cached_videos = feed_map.get(space_id);
+                        if (cached_videos && cached_videos.length > 0) {
+                            formatted_videos = cached_videos;
+                            has_more = false;
+                        }
+                    }
+                }
+            } catch (e) {
+                log("BiliBili log: SpaceVideosContentPager dynamic feed catch: " + (e?.message || String(e)));
+            }
+        }
+        super(formatted_videos, has_more);
         this.next_page = 2;
         this.space_id = space_id;
         this.page_size = page_size;
         this.space_info = space_info;
     }
     nextPage() {
-        const maybe_space_videos_response = JSON.parse(space_videos_request(this.space_id, this.next_page, this.page_size, undefined, undefined).body);
-        if (maybe_space_videos_response.code === -352) {
-            throw new ScriptException("rate limited");
+        try {
+            const maybe_space_videos_response = JSON.parse(space_videos_request(this.space_id, this.next_page, this.page_size, undefined, undefined).body);
+            if (maybe_space_videos_response.code === -352) {
+                log("BiliBili log: rate limited on next page fetch");
+                throw new ScriptException("rate limited");
+            }
+            if (maybe_space_videos_response.code !== 0 || !maybe_space_videos_response.data || !maybe_space_videos_response.data.list) {
+                log("BiliBili log: space_videos_request failed on nextPage");
+                this.hasMore = false;
+                this.results = [];
+                return this;
+            }
+            const space_search_response = maybe_space_videos_response;
+            this.results = format_space_videos(space_search_response, this.space_id, this.space_info);
+            this.hasMore = space_search_response.data.page.count > this.next_page * this.page_size;
+            this.next_page += 1;
+        } catch (e) {
+            log("BiliBili log: Error on nextPage: " + (e?.message || String(e)));
+            this.hasMore = false;
+            this.results = [];
         }
-        const space_search_response = maybe_space_videos_response;
-        this.results = format_space_videos(space_search_response, this.space_id, this.space_info);
-        this.hasMore = space_search_response.data.page.count > this.next_page * this.page_size;
-        this.next_page += 1;
         return this;
     }
     hasMorePagers() {
@@ -1539,10 +1604,14 @@ function space_videos_request(space_id, page, page_size, keyword, order, builder
     const buvid3 = local_state.buvid3;
     const runner = builder === undefined ? local_http : builder;
     const now = Date.now();
-    // use the authenticated client because BiliBili blocks logged out users
+    // B站改版后，如果直接传 Cookie 头，由于不会走 AuthClient的SESSDATA，很容易被拒绝
+    // 这里我们依然带上这个 Cookie，但让 AuthClient(true) 把系统 Cookie 混入
+    // 主要是为了确保不会遗漏 b_nut 这种特定校验值
+    let cookies_header = `buvid3=${buvid3}; buvid4=${buvid4}; b_nut=${b_nut}`;
+
     const result = runner.GET(url, {
         "User-Agent": USER_AGENT,
-        Cookie: `buvid3=${buvid3}; buvid4=${buvid4}; b_nut=${b_nut}`,
+        Cookie: cookies_header,
         Host: "api.bilibili.com",
         Referer: "https://space.bilibili.com"
     }, true);
