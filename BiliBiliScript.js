@@ -894,9 +894,10 @@ function getChannelContents(url, type, order, filters) {
  * 对应 https://t.bilibili.com/ 页面
  */
 function _getDynamicFeedContents() {
+    // feed/all API 不支持 page/page_size 参数，每页固定返回约12条动态
+    // 分页通过 offset 实现，这里只获取第一页
     const url = create_url(DYNAMIC_FEED_API, {
-        type: "video",
-        page: "1"
+        type: "video"
     }).toString();
     const now = Date.now();
     const json = local_http.GET(url, {
@@ -912,10 +913,9 @@ function _getDynamicFeedContents() {
         return new VideoPager([], false);
     }
     const items = response.data.items || [];
-    // 只取最新5条视频动态
+    // 获取本页全部视频动态（API默认每页约12条）
     const videos = [];
     for (const item of items) {
-        if (videos.length >= 5) break;
         if (item.type !== "DYNAMIC_TYPE_AV") continue;
         const module_author = item.modules.module_author;
         const module_dynamic = item.modules.module_dynamic;
