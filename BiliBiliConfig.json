@@ -1,14 +1,14 @@
 {
     "name": "哔哩哔哩（作者推荐版）",
     "description": "B站视频插件 - 推荐区仅显示当前作者的视频\n\n登录后可解锁更高画质、字幕和会员内容",
-    "author": "dsdwsdocol",
-    "authorUrl": "https://github.com/dsdwsdocol",
+    "author": "dsdwsd",
+    "authorUrl": "https://github.com/dsdwsd",
     "platformUrl": "https://bilibili.com",
-    "sourceUrl": "https://raw.githubusercontent.com/dsdwsdocol/grayjay-bilibili-author-recommend/master/BiliBiliConfig.json",
-    "repositoryUrl": "https://github.com/dsdwsdocol/grayjay-bilibili-author-recommend",
-    "scriptUrl": "https://raw.githubusercontent.com/dsdwsdocol/grayjay-bilibili-author-recommend/master/BiliBiliScript.js",
+    "sourceUrl": "https://raw.githubusercontent.com/dsdwsd/grayjay-bilibili-author-recommend/master/BiliBiliConfig.json",
+    "repositoryUrl": "https://github.com/dsdwsd/grayjay-bilibili-author-recommend",
+    "scriptUrl": "https://raw.githubusercontent.com/dsdwsd/grayjay-bilibili-author-recommend/master/BiliBiliScript.js",
     "version": 1,
-    "iconUrl": "https://raw.githubusercontent.com/dsdwsdocol/grayjay-bilibili-author-recommend/master/BiliBiliIcon.png",
+    "iconUrl": "https://raw.githubusercontent.com/dsdwsd/grayjay-bilibili-author-recommend/master/BiliBiliIcon.png",
     "id": "bilibili-author-recommend",
     "packages": [
         "Http",
@@ -30,7 +30,9 @@
     ],
     "authentication": {
         "loginUrl": "https://passport.bilibili.com/h5-app/passport/login",
-        "cookiesToFind": ["SESSDATA"],
+        "cookiesToFind": [
+            "SESSDATA"
+        ],
         "userAgent": "Mozilla/5.0 (Linux; Android 12) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.6099.230 Mobile Safari/537.36"
     },
     "settings": []
