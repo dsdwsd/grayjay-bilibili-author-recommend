@@ -894,22 +894,27 @@ function getChannelContents(url, type, order, filters) {
  * 对应 https://t.bilibili.com/ 页面
  */
 function _getDynamicFeedContents() {
-    // feed/all API 不支持 page/page_size 参数，每页固定返回约12条动态
+    // feed/all API 与 feed/space 同系列，需要 WBI 签名
+    // 不支持 page/page_size 参数，每页固定返回约12条动态
     // 分页通过 offset 实现，这里只获取第一页
-    const url = create_url(DYNAMIC_FEED_API, {
+    const url = create_signed_url(DYNAMIC_FEED_API, {
         type: "video"
     }).toString();
+    log("BiliBili log: dynamic feed request url: " + url);
     const now = Date.now();
-    const json = local_http.GET(url, {
+    const raw_response = local_http.GET(url, {
         Host: "api.bilibili.com",
         Cookie: `buvid3=${local_state.buvid3}; buvid4=${local_state.buvid4}; b_nut=${local_state.b_nut}`,
         Referer: "https://t.bilibili.com/",
         "User-Agent": USER_AGENT
-    }, true).body;
+    }, true);
     log_network_call(now);
+    log("BiliBili log: dynamic feed response status: " + raw_response.code);
+    const json = raw_response.body;
+    log("BiliBili log: dynamic feed response body (first 500): " + json.substring(0, 500));
     const response = JSON.parse(json);
     if (response.code !== 0) {
-        log("BiliBili log: dynamic feed request failed, code: " + response.code);
+        log("BiliBili log: dynamic feed API error, code: " + response.code + ", message: " + response.message);
         return new VideoPager([], false);
     }
     const items = response.data.items || [];
