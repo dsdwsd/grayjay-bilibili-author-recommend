@@ -749,6 +749,29 @@ function isChannelUrl(url) {
 }
 function getChannel(url) {
     const space_id = parse_space_url(url);
+    // 已登录时先尝试从动态Feed缓存获取作者信息，避免被 rate-limit
+    if (bridge.isLoggedIn()) {
+        try {
+            const feed_map = _refreshDynamicFeedCache();
+            if (feed_map !== null) {
+                const cached_videos = feed_map.get(space_id);
+                if (cached_videos && cached_videos.length > 0) {
+                    const first_video = cached_videos[0];
+                    log(`BiliBili log: getChannel using cached author info for mid ${space_id}`);
+                    return new PlatformChannel({
+                        id: new PlatformID(PLATFORM, space_id.toString(), plugin.config.id),
+                        name: first_video.author.name,
+                        thumbnail: first_video.author.thumbnail,
+                        url: `${SPACE_URL_PREFIX}${space_id}`,
+                        links: { 'BiliBili': `${SPACE_URL_PREFIX}${space_id}` }
+                    });
+                }
+            }
+        } catch (e) {
+            log("BiliBili log: getChannel cache lookup failed: " + (e?.message || String(e)));
+        }
+    }
+    // 缓存未命中或未登录，回退到原始API
     try {
         const requests = [{
             request(builder) { return space_request(space_id, builder); },
@@ -762,7 +785,7 @@ function getChannel(url) {
             log("BiliBili log: Failed loading space info");
             return new PlatformChannel({
                 id: new PlatformID(PLATFORM, space_id.toString(), plugin.config.id),
-                name: NAME_LOAD_FAILED,
+                name: space_id.toString(),
                 thumbnail: "",
                 url: `${SPACE_URL_PREFIX}${space_id}`,
                 links: {
@@ -803,7 +826,7 @@ function getChannel(url) {
         log("BiliBili log: getChannel error for " + space_id + ": " + (e?.message || String(e)));
         return new PlatformChannel({
             id: new PlatformID(PLATFORM, space_id.toString(), plugin.config.id),
-            name: NAME_LOAD_FAILED,
+            name: space_id.toString(),
             thumbnail: "",
             url: `${SPACE_URL_PREFIX}${space_id}`,
             links: {
@@ -883,9 +906,10 @@ function getChannelContents(url, type, order, filters) {
                     log(`BiliBili log: dynamic feed cache hit for mid ${space_id}, ${cached_videos.length} videos`);
                     return new VideoPager(cached_videos, false);
                 }
-                // 缓存未命中（该作者近期无动态），回退到原始API获取频道内容
-                log(`BiliBili log: dynamic feed cache miss for mid ${space_id}, falling back to per-channel API`);
-                // 不返回空，让下面的原始API处理
+                // 缓存未命中（该作者近期无动态），返回空代表无更新
+                // 不回退到原始 API（避免 rate limit 导致失败）
+                log(`BiliBili log: dynamic feed cache miss for mid ${space_id}, no recent videos`);
+                return new VideoPager([], false);
             }
         } catch (e) {
             log("BiliBili log: dynamic feed cache lookup failed: " + (e?.message || String(e)));
