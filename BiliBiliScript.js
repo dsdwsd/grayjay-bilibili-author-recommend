@@ -854,6 +854,21 @@ function getChannelCapabilities() {
     ], []);
 }
 function getChannelContents(url, type, order, filters) {
+    const MAX_RETRIES = 3;
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+        try {
+            return _getChannelContentsInner(url, type, order, filters);
+        } catch (e) {
+            const msg = e?.message ?? String(e);
+            if (attempt < MAX_RETRIES && msg.includes("is not valid JSON")) {
+                log(`BiliBili log: getChannelContents attempt ${attempt} failed (HTML response), retrying...`);
+                continue;
+            }
+            throw e;
+        }
+    }
+}
+function _getChannelContentsInner(url, type, order, filters) {
     if (type === null) {
         type = Type.Feed.Mixed;
     }
