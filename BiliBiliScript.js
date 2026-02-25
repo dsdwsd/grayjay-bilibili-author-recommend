@@ -175,6 +175,46 @@ function init_local_storage(state) {
         dynamic_feed_cache: null // { timestamp: number, items_by_mid: Map<number, PlatformVideo[]> }
     };
     local_state = state === undefined ? init_session_info() : state;
+    if (!local_state.latest_videos) {
+        local_state.latest_videos = {};
+    }
+}
+
+function _cacheLatestVideo(space_id, v) {
+    try {
+        if (!local_state.latest_videos) {
+            local_state.latest_videos = {};
+        }
+        local_state.latest_videos[space_id] = v;
+    } catch (e) { }
+}
+
+function _restoreLatestVideo(space_id) {
+    try {
+        if (local_state.latest_videos && local_state.latest_videos[space_id]) {
+            const v = local_state.latest_videos[space_id];
+            const video_id = new PlatformID(PLATFORM, v.id, plugin.config.id);
+            const author_id = new PlatformID(PLATFORM, v.author.id, plugin.config.id);
+            const author = new PlatformAuthorLink(
+                author_id, v.author.name, v.author.url, v.author.thumbnail, v.author.subscribers
+            );
+            return new PlatformVideo({
+                id: video_id,
+                name: v.name,
+                url: v.url,
+                thumbnails: new Thumbnails([new Thumbnail(v.thumbnail, HARDCODED_THUMBNAIL_QUALITY)]),
+                author: author,
+                duration: v.duration,
+                viewCount: v.viewCount,
+                isLive: false,
+                shareUrl: v.shareUrl,
+                datetime: v.datetime
+            });
+        }
+    } catch (e) {
+        log("BiliBili log: restore latest video failed: " + (e?.message || String(e)));
+    }
+    return null;
 }
 
 function refresh_wbi_keys() {
@@ -922,7 +962,11 @@ function getChannelContents(url, type, order, filters) {
                     return new VideoPager(cached_videos, false);
                 }
                 // 缓存未命中 = 该作者近期无视频更新
-                log(`BiliBili log: dynamic feed cache miss for mid ${space_id}, no recent videos`);
+                log(`BiliBili log: dynamic feed cache miss for mid ${space_id}, trying to restore...`);
+                const restored = _restoreLatestVideo(space_id);
+                if (restored) {
+                    return new VideoPager([restored], false);
+                }
                 return new VideoPager([], false);
             }
         } catch (e) {
@@ -1043,6 +1087,22 @@ function _refreshDynamicFeedCache() {
                 });
                 if (!items_by_mid.has(mid)) {
                     items_by_mid.set(mid, []);
+                    _cacheLatestVideo(mid, {
+                        id: archive.bvid,
+                        name: archive.title,
+                        url: `${VIDEO_URL_PREFIX}${archive.bvid}`,
+                        thumbnail: archive.cover,
+                        author: {
+                            id: mid.toString(),
+                            name: module_author.name,
+                            url: `${SPACE_URL_PREFIX}${mid}`,
+                            thumbnail: module_author.face
+                        },
+                        duration: duration,
+                        viewCount: view_count,
+                        shareUrl: `${VIDEO_URL_PREFIX}${archive.bvid}`,
+                        datetime: Number(module_author.pub_ts)
+                    });
                 }
                 items_by_mid.get(mid).push(video);
             } catch (itemError) {
@@ -1085,6 +1145,8 @@ function _getChannelContentsInner(url, type, order, filters) {
                         return new VideoPager(feed_map.get(space_id), false);
                     }
                 }
+                const restored = _restoreLatestVideo(space_id);
+                if (restored) return new VideoPager([restored], false);
                 return new VideoPager([], false);
             }
         case Type.Feed.Mixed: {
@@ -1098,6 +1160,10 @@ function _getChannelContentsInner(url, type, order, filters) {
                 if (bridge.isLoggedIn()) {
                     const feed_map = _refreshDynamicFeedCache();
                     if (feed_map && feed_map.has(space_id)) fallback_videos = feed_map.get(space_id);
+                }
+                if (fallback_videos.length === 0) {
+                    const restored = _restoreLatestVideo(space_id);
+                    if (restored) fallback_videos = [restored];
                 }
                 videos_pager = new VideoPager(fallback_videos, false);
             }
@@ -1650,6 +1716,26 @@ function space_videos_request(space_id, page, page_size, keyword, order, builder
 function format_space_videos(space_videos_response, space_id, space_info) {
     const author_id = new PlatformID(PLATFORM, space_id.toString(), plugin.config.id);
     const author = new PlatformAuthorLink(author_id, space_info.name, `${SPACE_URL_PREFIX}${space_id}`, space_info.face, space_info.num_fans);
+    if (space_videos_response.data && space_videos_response.data.list && space_videos_response.data.list.vlist && space_videos_response.data.list.vlist.length > 0) {
+        const first = space_videos_response.data.list.vlist[0];
+        _cacheLatestVideo(space_id, {
+            id: first.bvid,
+            name: first.title,
+            url: `${VIDEO_URL_PREFIX}${first.bvid}`,
+            thumbnail: first.pic,
+            author: {
+                id: space_id.toString(),
+                name: space_info.name,
+                url: `${SPACE_URL_PREFIX}${space_id}`,
+                thumbnail: space_info.face,
+                subscribers: space_info.num_fans
+            },
+            duration: parse_minutes_seconds(first.length),
+            viewCount: first.play === "--" ? 0 : first.play,
+            shareUrl: `${VIDEO_URL_PREFIX}${first.bvid}`,
+            datetime: Number(first.created)
+        });
+    }
     return space_videos_response.data.list.vlist.map(function (space_video) {
         const url = `${VIDEO_URL_PREFIX}${space_video.bvid}`;
         const video_id = new PlatformID(PLATFORM, space_video.bvid, plugin.config.id);
