@@ -7,7 +7,7 @@
     "sourceUrl": "https://raw.githubusercontent.com/dsdwsd/grayjay-bilibili-author-recommend/master/BiliBiliConfig.json",
     "repositoryUrl": "https://github.com/dsdwsd/grayjay-bilibili-author-recommend",
     "scriptUrl": "https://raw.githubusercontent.com/dsdwsd/grayjay-bilibili-author-recommend/master/BiliBiliScript.js",
-    "version": 100,
+    "version": 101,
     "iconUrl": "https://raw.githubusercontent.com/dsdwsd/grayjay-bilibili-author-recommend/master/BiliBiliIcon.png",
     "id": "cf8ea74d-ad9b-489e-a083-539b6aa8648c",
     "packages": [
