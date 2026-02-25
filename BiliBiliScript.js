@@ -1663,55 +1663,45 @@ class SpaceVideosContentPager extends VideoPager {
     }
 }
 function space_videos_request(space_id, page, page_size, keyword, order, builder) {
-    const space_contents_search_prefix = "https://api.bilibili.com/x/space/wbi/arc/search";
-    let params = {
-        mid: space_id.toString(),
-        pn: page.toString(),
-        ps: page_size.toString()
-    };
-    if (order !== undefined) {
-        params = {
-            ...params,
-            order: (function (order) {
-                switch (order) {
-                    case Type.Order.Chronological:
-                        return "pubdate";
-                    case Type.Order.Favorites:
-                        return "stow";
-                    case Type.Order.Views:
-                        return "click";
-                    case "CHRONOLOGICAL":
-                        return "pubdate";
-                    default:
-                        throw new ScriptException(`unhandled ordering ${order}`);
-                }
-            })(order)
+    const workerUrl = "https://worker-b-bilibili.nudejs.workers.dev/author/" + encodeURIComponent(space_id.toString()) + "?page=" + page;
+    const result = local_http.GET(workerUrl, {
+        "X-Custom-Auth": "__YOUR_SECRET_TOKEN__"
+    }, false);
+    let workerData;
+    try {
+        workerData = JSON.parse(result.body);
+    } catch (e) {
+        return { body: JSON.stringify({ code: -1, message: "worker parse error" }) };
+    }
+    if (!workerData || !Array.isArray(workerData.videos)) {
+        return { body: JSON.stringify({ code: -1, message: "worker invalid response" }) };
+    }
+    const vlist = workerData.videos.map(function (v) {
+        return {
+            bvid: v.bvid,
+            title: v.title,
+            pic: v.cover,
+            created: v.pubdate,
+            length: _secsToLength(v.duration),
+            play: v.views
         };
-    }
-    if (keyword !== undefined) {
-        params = { ...params, keyword };
-    }
-    const url = create_signed_url(space_contents_search_prefix, params).toString();
-    const b_nut = local_state.b_nut;
-    const buvid4 = local_state.buvid4;
-    const buvid3 = local_state.buvid3;
-    const runner = builder === undefined ? local_http : builder;
-    const now = Date.now();
-    // B站改版后，如果直接传 Cookie 头，由于不会走 AuthClient的SESSDATA，很容易被拒绝
-    // 这里我们依然带上这个 Cookie，但让 AuthClient(true) 把系统 Cookie 混入
-    // 主要是为了确保不会遗漏 b_nut 这种特定校验值
-    let cookies_header = `buvid3=${buvid3}; buvid4=${buvid4}; b_nut=${b_nut}`;
-
-    const result = runner.GET(url, {
-        "User-Agent": USER_AGENT,
-        Cookie: cookies_header,
-        Host: "api.bilibili.com",
-        Referer: "https://space.bilibili.com"
-    }, true);
-    if (builder === undefined) {
-        log_network_call(now);
-    }
-    return result;
+    });
+    const total = workerData.total || (vlist.length < page_size ? (page - 1) * page_size + vlist.length : page * page_size + 1);
+    return {
+        body: JSON.stringify({
+            code: 0,
+            data: {
+                list: { vlist: vlist },
+                page: { pn: page, ps: vlist.length, count: total }
+            }
+        })
+    };
+}
+function _secsToLength(secs) {
+    secs = secs || 0;
+    const m = Math.floor(secs / 60);
+    const s = secs % 60;
+    return String(m).padStart(2, "0") + ":" + String(s).padStart(2, "0");
 }
 function format_space_videos(space_videos_response, space_id, space_info) {
     const author_id = new PlatformID(PLATFORM, space_id.toString(), plugin.config.id);
