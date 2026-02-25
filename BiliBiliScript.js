@@ -1663,9 +1663,12 @@ class SpaceVideosContentPager extends VideoPager {
     }
 }
 function space_videos_request(space_id, page, page_size, keyword, order, builder) {
-    const workerUrl = "https://worker-b-bilibili.nudejs.workers.dev/author/" + encodeURIComponent(space_id.toString()) + "?page=" + page;
+    const workerUrl = "https://worker-b-bilibili.nudejs.workers.dev/author/"
+        + encodeURIComponent(space_id.toString())
+        + "?page=" + page
+        + "&t=" + encodeURIComponent("__YOUR_SECRET_TOKEN__");
     const result = local_http.GET(workerUrl, {
-        "X-Custom-Auth": "__YOUR_SECRET_TOKEN__"
+        "User-Agent": USER_AGENT
     }, false);
     let workerData;
     try {
